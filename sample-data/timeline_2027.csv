@@ -1,0 +1,26 @@
+﻿Typ;Titel;Beginn;Ende;Release;Sprint;Verantwortlich;Notizen
+Sprint;Sprint 60;04.01.2027;15.01.2027;R-2027.1;Sprint 60;Team Blau;
+Sprintplanung;Sprint 60 Planning;04.01.2027;04.01.2027;R-2027.1;Sprint 60;PO;Teams
+Review;Sprint 60 Review;15.01.2027;15.01.2027;R-2027.1;Sprint 60;PO;Demo + video
+Sprint;Sprint 61;18.01.2027;29.01.2027;R-2027.1;Sprint 61;Team Blau;
+Sprintplanung;Sprint 61 Planning;18.01.2027;18.01.2027;R-2027.1;Sprint 61;PO;Teams
+Review;Sprint 61 Review;29.01.2027;29.01.2027;R-2027.1;Sprint 61;PO;Demo + video
+Sprint;Sprint 62;01.02.2027;12.02.2027;R-2027.1;Sprint 62;Team Blau;
+Sprintplanung;Sprint 62 Planning;01.02.2027;01.02.2027;R-2027.1;Sprint 62;PO;Teams
+Review;Sprint 62 Review;12.02.2027;12.02.2027;R-2027.1;Sprint 62;PO;Demo + video
+Regressionstest;R-2027.1 Regtest;15.02.2027;23.02.2027;R-2027.1;;QA;
+Q&A;R-2027.1 Q&A;26.02.2027;01.03.2027;R-2027.1;;QA;
+Go-Live;R-2027.1 Deployment;03.03.2027;03.03.2027;R-2027.1;;Ops;
+Sprint;Sprint 63;15.02.2027;26.02.2027;R-2027.2;Sprint 63;Team Blau;
+Sprintplanung;Sprint 63 Planning;15.02.2027;15.02.2027;R-2027.2;Sprint 63;PO;Teams
+Review;Sprint 63 Review;26.02.2027;26.02.2027;R-2027.2;Sprint 63;PO;Demo + video
+Sprint;Sprint 64;01.03.2027;12.03.2027;R-2027.2;Sprint 64;Team Blau;
+Sprintplanung;Sprint 64 Planning;01.03.2027;01.03.2027;R-2027.2;Sprint 64;PO;Teams
+Review;Sprint 64 Review;12.03.2027;12.03.2027;R-2027.2;Sprint 64;PO;Demo + video
+Sprint;Sprint 65;15.03.2027;26.03.2027;R-2027.2;Sprint 65;Team Blau;
+Sprintplanung;Sprint 65 Planning;15.03.2027;15.03.2027;R-2027.2;Sprint 65;PO;Teams
+Review;Sprint 65 Review;26.03.2027;26.03.2027;R-2027.2;Sprint 65;PO;Demo + video
+Regressionstest;R-2027.2 Regtest;29.03.2027;06.04.2027;R-2027.2;;QA;
+Q&A;R-2027.2 Q&A;09.04.2027;12.04.2027;R-2027.2;;QA;
+Go-Live;R-2027.2 Deployment;14.04.2027;14.04.2027;R-2027.2;;Ops;
+Feiertag;Neujahr;01.01.2027;01.01.2027;;;;

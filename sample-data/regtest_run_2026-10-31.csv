@@ -1,0 +1,35 @@
+﻿Test;Result;Error message;Date
+TC-3000;Passed;;2026-10-31
+TC-3001;Passed;;2026-10-31
+TC-3002;Passed;;2026-10-31
+TC-3003;Passed;;2026-10-31
+TC-3004;Passed;;2026-10-31
+TC-3005;Passed;;2026-10-31
+TC-3006;Passed;;2026-10-31
+TC-3007;Failed;Element #btnSave not clickable after 15s;2026-10-31
+TC-3008;Failed;Element #btnSave not clickable after 15s;2026-10-31
+TC-3009;Passed;;2026-10-31
+TC-3010;Passed;;2026-10-31
+TC-3011;Passed;;2026-10-31
+TC-3012;Passed;;2026-10-31
+TC-3013;Passed;;2026-10-31
+TC-3014;Passed;;2026-10-31
+TC-3015;Passed;;2026-10-31
+TC-3016;Passed;;2026-10-31
+TC-3017;Passed;;2026-10-31
+TC-3018;Passed;;2026-10-31
+TC-3019;Passed;;2026-10-31
+TC-3020;Passed;;2026-10-31
+TC-3021;Passed;;2026-10-31
+TC-3022;Passed;;2026-10-31
+TC-3023;Passed;;2026-10-31
+TC-3024;Passed;;2026-10-31
+TC-3025;Passed;;2026-10-31
+TC-3026;Passed;;2026-10-31
+TC-3027;Passed;;2026-10-31
+TC-3028;Passed;;2026-10-31
+TC-3029;Passed;;2026-10-31
+TC-1800;Failed;Rounding diff 0.01 in VAT total (expected 714.00, got 714.01);2026-10-31
+TC-1801;Failed;Test data missing: customer K-77;2026-10-31
+TC-2201;Passed;;2026-10-31
+TC-2220;Passed;;2026-10-31

@@ -1,0 +1,4 @@
+# regTester runs on the Python standard library alone (Python 3.10+).
+# Optional, for the tray icon next to the Windows clock:
+pystray>=0.19
+Pillow>=10.0

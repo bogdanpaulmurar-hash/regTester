@@ -87,7 +87,7 @@ export async function render(root, ctx, params) {
         facet(t('f_release'), 'release', r => r.data?.release), facet(t('f_tags'), 'tag', r => r.tags)].filter(Boolean));
       clear(resBox);
       resBox.appendChild(h('div', { class: 'toolbar' }, h('span', { class: 'hint' }, t('specs_n_results', { n: res.length, total: docs.length })), h('span', { class: 'sp' }),
-        res.length ? btn('CSV', () => download(`specs-${iso(new Date())}.csv`, '﻿' + toCsv(res.map(x => x.doc.r), [
+        res.length ? btn('CSV', () => download(`specs-${iso(new Date())}.csv`, '\uFEFF' + toCsv(res.map(x => x.doc.r), [
           { label: 'Key', key: 'key' }, { label: 'Type', key: 'kind' }, { label: 'Title', key: 'title' }, { label: 'Status', get: r => r.data?.status },
           { label: 'Module', get: r => r.data?.module }, { label: 'Release', get: r => r.data?.release }, { label: 'Tags', get: r => (r.tags || []).join(', ') }, { label: 'Text', key: 'body' }]), 'text/csv'), { icon: 'download', cls: 'sm' }) : null));
       if (!docs.length) { resBox.appendChild(emptyState(t('specs_empty'), canWrite ? btn(t('import'), importDialog, { icon: 'upload', cls: 'primary' }) : null)); return; }

@@ -185,7 +185,7 @@ export async function render(root, ctx) {
     copyText(lines.length ? `${t('cov_gaps_title')} (${iso(new Date())})\n${lines.join('\n')}` : t('cov_no_gaps'));
   }
   function exportCsv() {
-    download(`coverage-${iso(new Date())}.csv`, '﻿' + toCsv(visible(), [
+    download(`coverage-${iso(new Date())}.csv`, '\uFEFF' + toCsv(visible(), [
       { label: 'Code', get: r => r.feature.key }, { label: 'Function', get: r => r.feature.title }, { label: 'Sprint', get: r => r.feature.data?.sprint },
       ...COVER_COLS.map(c => ({ label: c, get: r => r.status[c] })), { label: 'Gaps', get: r => r.gaps }]), 'text/csv');
   }

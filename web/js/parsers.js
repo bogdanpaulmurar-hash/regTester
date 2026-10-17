@@ -205,7 +205,7 @@ export function readHtml(text) {
 
 async function decodeText(buffer) {
   const utf = new TextDecoder('utf-8').decode(buffer);
-  if (!utf.includes('�')) return utf.replace(/^﻿/, '');
+  if (!utf.includes(String.fromCharCode(0xFFFD))) return utf.replace(/^\uFEFF/, '');
   return new TextDecoder('windows-1252').decode(buffer);
 }
 

@@ -329,7 +329,7 @@ export async function render(root, ctx) {
 
   function exportCsv() {
     const items = filtered();
-    download(`timeline-${iso(new Date())}.csv`, '﻿' + toCsv(items, [
+    download(`timeline-${iso(new Date())}.csv`, '\uFEFF' + toCsv(items, [
       { label: 'Type', get: r => r.kind }, { label: 'Title', key: 'title' }, { label: 'Start', get: r => r.data.start }, { label: 'End', get: r => r.data.end },
       { label: 'Release', get: r => r.data.release }, { label: 'Sprint', get: r => r.data.sprint }, { label: 'Owner', get: r => r.data.owner }, { label: 'Notes', key: 'body' }]), 'text/csv');
     toast(t('exported', { n: items.length }));

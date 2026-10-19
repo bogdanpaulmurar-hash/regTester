@@ -155,7 +155,7 @@ export async function render(root, ctx) {
   function importGlossary() {
     openImport({
       api: ctx.api, section: 'glossary', title: t('trs_t_glossary'), accept: '.xlsx,.csv',
-      fields: [{ key: 'wrong', label: t('trs_wrong'), required: true, aliases: ['wrong', 'falsch', 'gresit', 'heard', 'recognized'] },
+      fields: [{ key: 'wrong', label: t('trs_wrong'), required: true, aliases: ['wrong', 'auzit', 'falsch', 'gresit', 'heard', 'recognized'] },
         { key: 'right', label: t('trs_right'), required: true, aliases: ['right', 'correct', 'richtig', 'corect', 'term'] }],
       toRecord: m => String(m.wrong).trim() && String(m.right).trim() ? { key: String(m.wrong).trim().toLowerCase(), title: String(m.wrong).trim(), data: { wrong: String(m.wrong).trim(), right: String(m.right).trim() } } : null,
       previewCols: [['data.wrong', t('trs_wrong')], ['data.right', t('trs_right')]],

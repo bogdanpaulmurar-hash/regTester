@@ -148,7 +148,7 @@ export async function render(root, ctx) {
       api: ctx.api, section: 'features', title: t('cov_import_rn'), accept: '.xlsx,.xlsm,.csv,.docx,.html,.htm,.txt,.md', hint: t('cov_import_rn_hint'),
       fields: [
         { key: 'key', label: t('f_code'), aliases: ['id', 'key', 'code', 'cod', 'ticket', 'story', 'jira', 'pbi', 'work item', 'nr'] },
-        { key: 'title', label: t('f_title'), required: true, aliases: ['title', 'titel', 'name', 'feature', 'function', 'funktion', 'functie', 'summary', 'zusammenfassung'] },
+        { key: 'title', label: t('f_title'), required: true, aliases: ['title', 'titlu', 'titel', 'name', 'feature', 'function', 'funktion', 'functie', 'summary', 'zusammenfassung'] },
         { key: 'sprint', label: t('f_sprint'), aliases: ['sprint', 'iteration'] },
         { key: 'release', label: t('f_release'), aliases: ['release', 'version', 'versiune'] },
         { key: 'module', label: t('f_module'), aliases: ['module', 'modul', 'area', 'bereich', 'component', 'komponente', 'componenta'] },
@@ -165,10 +165,10 @@ export async function render(root, ctx) {
     openImport({
       api: ctx.api, section: 'tests', title: t('cov_import_tests'), accept: '.xlsx,.xlsm,.csv', hint: t('cov_import_tests_hint'),
       fields: [
-        { key: 'key', label: t('f_test_id'), required: true, aliases: ['id', 'test id', 'testcase', 'test case id', 'tc', 'key', 'nr'] },
-        { key: 'title', label: t('f_title'), required: true, aliases: ['title', 'name', 'titel', 'test case', 'testfall', 'summary', 'denumire'] },
+        { key: 'key', label: t('f_test_id'), required: true, aliases: ['id', 'test id', 'id test', 'testcase', 'test case id', 'tc', 'key', 'nr'] },
+        { key: 'title', label: t('f_title'), required: true, aliases: ['title', 'titlu', 'name', 'titel', 'test case', 'testfall', 'summary', 'denumire'] },
         { key: 'module', label: t('f_module'), aliases: ['module', 'modul', 'area', 'folder', 'ordner', 'suite'] },
-        { key: 'feature', label: t('f_feature_code'), aliases: ['feature', 'requirement', 'anforderung', 'cerinta', 'story', 'link'] },
+        { key: 'feature', label: t('f_feature_code'), aliases: ['feature', 'cod functie', 'requirement', 'anforderung', 'cerinta', 'story', 'link'] },
         { key: 'status', label: t('f_status'), aliases: ['status', 'state', 'zustand', 'stare'] },
       ],
       toRecord: m => String(m.key).trim() ? { key: String(m.key).trim(), title: String(m.title || '').trim() || String(m.key),

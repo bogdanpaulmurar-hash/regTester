@@ -156,7 +156,7 @@ export async function render(root, ctx) {
   function importKnown() {
     openImport({
       api: ctx.api, section: 'known', title: t('tri_t_known'), accept: '.xlsx,.csv',
-      fields: [{ key: 'pattern', label: t('tri_pattern'), required: true, aliases: ['pattern', 'message', 'error', 'fehler', 'eroare'] },
+      fields: [{ key: 'pattern', label: t('tri_pattern'), required: true, aliases: ['pattern', 'tipar', 'message', 'error', 'fehler', 'eroare'] },
         { key: 'reason', label: t('tri_reason'), aliases: ['reason', 'grund', 'motiv', 'comment'] }, { key: 'bug', label: t('tri_bug'), aliases: ['bug', 'ticket', 'issue', 'defect'] }],
       toRecord: m => String(m.pattern).trim() ? { key: String(m.pattern).trim().toLowerCase(), title: String(m.pattern).trim(), data: { pattern: String(m.pattern).trim().toLowerCase(), reason: String(m.reason || ''), bug: String(m.bug || '') } } : null,
       onDone: () => { ctx.invalidate('known'); load(true); },

@@ -265,7 +265,7 @@ export async function render(root, ctx) {
       api: ctx.api, section: 'timeline', title: t('tl_import'), accept: '.xlsx,.xlsm,.csv', hint: t('tl_import_hint'),
       fields: [
         { key: 'kind', label: t('f_type'), aliases: ['type', 'typ', 'tip', 'category', 'kategorie', 'categorie', 'art', 'event type'] },
-        { key: 'title', label: t('f_title'), required: true, aliases: ['title', 'name', 'titel', 'denumire', 'eveniment', 'event', 'subject', 'betreff', 'description'] },
+        { key: 'title', label: t('f_title'), required: true, aliases: ['title', 'titlu', 'name', 'titel', 'denumire', 'eveniment', 'event', 'subject', 'betreff', 'description'] },
         { key: 'start', label: t('f_start'), required: true, aliases: ['start', 'start date', 'begin', 'beginn', 'von', 'from', 'data start', 'data inceput', 'inceput', 'date', 'datum', 'data'] },
         { key: 'end', label: t('f_end'), aliases: ['end', 'end date', 'ende', 'bis', 'to', 'data sfarsit', 'sfarsit', 'finish'] },
         { key: 'release', label: t('f_release'), aliases: ['release', 'version', 'versiune'] },

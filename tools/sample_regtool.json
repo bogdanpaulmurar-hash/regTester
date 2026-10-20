@@ -1,0 +1,1033 @@
+{
+ "timeline": [
+  {
+   "version": "V8.1",
+   "keyword": "V8.1 S1 Regressionstest",
+   "title": "",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "Review",
+   "title": "V8.1 S1 Review",
+   "start": "10/31/2025",
+   "end": "11/1/2025",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "MIG UAT",
+   "title": "V8.1 S1 Deployment MIG UAT",
+   "start": "11/3/2025",
+   "end": "11/4/2025",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "Integrationstest",
+   "title": "V8.1 S1 Integrationstest UAT",
+   "start": "11/5/2025",
+   "end": "11/18/2025",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "Technical View",
+   "title": "V8.1 S1 Realisierung Technical View",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "V8.1 S2 Regressionstest",
+   "title": "",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "Review",
+   "title": "V8.1 S2 Review",
+   "start": "12/19/2025",
+   "end": "12/20/2025",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "MIG UAT",
+   "title": "V8.1 S2 Deployment MIG UAT",
+   "start": "12/22/2025",
+   "end": "12/23/2025",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "Integrationstest",
+   "title": "V8.1 S2 Integrationstest UAT",
+   "start": "12/24/2025",
+   "end": "1/6/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "MIG UAT",
+   "title": "V8.1 S1&2 RegTest MIG UAT",
+   "start": "12/24/2025",
+   "end": "12/30/2025",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "Definition Business View",
+   "title": "V8.1 S2 Definition Business View",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "V8.1 S3 Regressionstest",
+   "title": "",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "Review",
+   "title": "V8.1 S3 Review",
+   "start": "1/23/2026",
+   "end": "1/24/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "MIG UAT",
+   "title": "V8.1 S3 Deployment MIG UAT",
+   "start": "1/26/2026",
+   "end": "1/27/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "Integrationstest",
+   "title": "V8.1 S3 Integrationstest UAT",
+   "start": "1/28/2026",
+   "end": "2/10/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "MIG UAT",
+   "title": "V8.1 S3 RegTest MIG UAT OT 13.1",
+   "start": "1/28/2026",
+   "end": "2/24/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "CORE LT",
+   "title": "V8.1 Deployment CORE LT",
+   "start": "2/23/2026",
+   "end": "2/24/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "CORE LT",
+   "title": "V8.1 RegTest CORE LT",
+   "start": "2/25/2026",
+   "end": "3/6/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "CORE LT",
+   "title": "V8.1 LuP CORE LT",
+   "start": "3/9/2026",
+   "end": "3/10/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "Testprotokoll",
+   "title": "V8.1 Reg Testprotokoll erstellen",
+   "start": "3/11/2026",
+   "end": "3/12/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.1",
+   "keyword": "PROD",
+   "title": "V8.1 Deployment PROD",
+   "start": "3/14/2026",
+   "end": "3/15/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "V8.2 S1 Regressionstest",
+   "title": "",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "Review",
+   "title": "V8.2 S1 Review",
+   "start": "2/27/2026",
+   "end": "2/28/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "MIG UAT",
+   "title": "V8.2 S1 Deployment MIG UAT",
+   "start": "3/2/2026",
+   "end": "3/3/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "Integrationstest",
+   "title": "V8.2 S1 Integrationstest UAT",
+   "start": "3/4/2026",
+   "end": "3/17/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "Technical View",
+   "title": "V8.2 S1 Realisierung Technical View",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "V8.2 S2 Regressionstest",
+   "title": "",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "Review",
+   "title": "V8.2 S2 Review",
+   "start": "4/17/2026",
+   "end": "4/18/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "MIG UAT",
+   "title": "V8.2 S2 Deployment MIG UAT",
+   "start": "4/20/2026",
+   "end": "4/21/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "Integrationstest",
+   "title": "V8.2 S2 Integrationstest UAT",
+   "start": "4/22/2026",
+   "end": "5/5/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "MIG UAT",
+   "title": "V8.2 S1&2 RegTest MIG UAT",
+   "start": "4/22/2026",
+   "end": "4/28/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "Definition Business View",
+   "title": "V8.2 S2 Definition Business View",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "V8.2 S3 Regressionstest",
+   "title": "",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "Review",
+   "title": "V8.2 S3 Review",
+   "start": "5/22/2026",
+   "end": "5/23/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "MIG UAT",
+   "title": "V8.2 S3 Deployment MIG UAT",
+   "start": "5/25/2026",
+   "end": "5/26/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "Integrationstest",
+   "title": "V8.2 S3 Integrationstest UAT",
+   "start": "5/27/2026",
+   "end": "6/9/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "MIG UAT",
+   "title": "V8.2 S3 RegTest MIG UAT OT 13.1",
+   "start": "5/27/2026",
+   "end": "6/23/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "CORE LT",
+   "title": "V8.2 Deployment CORE LT",
+   "start": "6/22/2026",
+   "end": "6/23/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "CORE LT",
+   "title": "V8.2 RegTest CORE LT",
+   "start": "6/24/2026",
+   "end": "7/3/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "CORE LT",
+   "title": "V8.2 LuP CORE LT",
+   "start": "7/6/2026",
+   "end": "7/7/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "Testprotokoll",
+   "title": "V8.2 Reg Testprotokoll erstellen",
+   "start": "7/8/2026",
+   "end": "7/9/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.2",
+   "keyword": "PROD",
+   "title": "V8.2 Deployment PROD",
+   "start": "7/11/2026",
+   "end": "7/12/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "V8.3 S1 Regressionstest",
+   "title": "",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "Review",
+   "title": "V8.3 S1 Review",
+   "start": "7/3/2026",
+   "end": "7/4/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "MIG UAT",
+   "title": "V8.3 S1 Deployment MIG UAT",
+   "start": "7/6/2026",
+   "end": "7/7/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "Integrationstest",
+   "title": "V8.3 S1 Integrationstest UAT",
+   "start": "7/8/2026",
+   "end": "7/21/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "Technical View",
+   "title": "V8.3 S1 Realisierung Technical View",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "V8.3 S2 Regressionstest",
+   "title": "",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "Review",
+   "title": "V8.3 S2 Review",
+   "start": "8/21/2026",
+   "end": "8/22/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "MIG UAT",
+   "title": "V8.3 S2 Deployment MIG UAT",
+   "start": "8/24/2026",
+   "end": "8/25/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "Integrationstest",
+   "title": "V8.3 S2 Integrationstest UAT",
+   "start": "8/26/2026",
+   "end": "9/8/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "MIG UAT",
+   "title": "V8.3 S1&2 RegTest MIG UAT",
+   "start": "8/26/2026",
+   "end": "9/1/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "Definition Business View",
+   "title": "V8.3 S2 Definition Business View",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "V8.3 S3 Regressionstest",
+   "title": "",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "Review",
+   "title": "V8.3 S3 Review",
+   "start": "9/25/2026",
+   "end": "9/26/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "MIG UAT",
+   "title": "V8.3 S3 Deployment MIG UAT",
+   "start": "9/28/2026",
+   "end": "9/29/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "Integrationstest",
+   "title": "V8.3 S3 Integrationstest UAT",
+   "start": "9/30/2026",
+   "end": "10/13/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "MIG UAT",
+   "title": "V8.3 S3 RegTest MIG UAT OT 13.1",
+   "start": "9/30/2026",
+   "end": "10/27/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "CORE LT",
+   "title": "V8.3 Deployment CORE LT",
+   "start": "10/26/2026",
+   "end": "10/27/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "CORE LT",
+   "title": "V8.3 RegTest CORE LT",
+   "start": "10/28/2026",
+   "end": "11/6/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "CORE LT",
+   "title": "V8.3 LuP CORE LT",
+   "start": "11/9/2026",
+   "end": "11/10/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "Testprotokoll",
+   "title": "V8.3 Reg Testprotokoll erstellen",
+   "start": "11/11/2026",
+   "end": "11/12/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "PROD",
+   "title": "V8.3 Deployment PROD",
+   "start": "11/14/2026",
+   "end": "11/15/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.3",
+   "keyword": "PROD",
+   "title": "V8.3 Deployment PROD",
+   "start": "11/14/2026",
+   "end": "11/15/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.4",
+   "keyword": "V8.4 S1 Regressionstest",
+   "title": "",
+   "start": "",
+   "end": "",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.4",
+   "keyword": "Review",
+   "title": "V8.4 S1 Review",
+   "start": "7/3/2026",
+   "end": "7/4/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "V8.4",
+   "keyword": "MIG UAT",
+   "title": "V8.4 S1 Deployment MIG UAT",
+   "start": "11/23/2026",
+   "end": "11/22/2026",
+   "assigned": "",
+   "show": "Ja"
+  },
+  {
+   "version": "-",
+   "keyword": "Urlaub",
+   "title": "Urlaub Maria",
+   "start": "10/12/2026",
+   "end": "10/23/2026",
+   "assigned": "Dan",
+   "show": "Ja"
+  },
+  {
+   "version": "-",
+   "keyword": "Urlaub",
+   "title": "Urlaub Ion",
+   "start": "11/2/2026",
+   "end": "11/6/2026",
+   "assigned": "Maria",
+   "show": "Ja"
+  }
+ ],
+ "catalog": [
+  [
+   "Demo TestCase List Report"
+  ],
+  [
+   "Nr.",
+   "TestCase ID",
+   "TestCase Title",
+   "Count",
+   "Quality",
+   "Main Category",
+   "Sub Category",
+   "Secondary Category",
+   "Quality Comment"
+  ],
+  [
+   1,
+   "demo-IA-1001",
+   "Start web client",
+   812,
+   "Web Client",
+   "High",
+   "Application",
+   "Start-Close",
+   "other TestCases"
+  ],
+  [
+   2,
+   "demo-IA-1002",
+   "Login user to web client",
+   809,
+   "Web Client",
+   "High",
+   "Application",
+   "Login-Logout",
+   "other TestCases"
+  ],
+  [
+   3,
+   "demo-IA-1103",
+   "Create company with location",
+   154,
+   "Web Client",
+   "High",
+   "Master Data",
+   "Company",
+   "Create or Add"
+  ],
+  [
+   4,
+   "demo-IA-1104",
+   "Find and select company by name",
+   233,
+   "Web Client",
+   "High",
+   "Master Data",
+   "Company",
+   "Find and Select"
+  ],
+  [
+   5,
+   "demo-IA-1210",
+   "Create ticket inside call",
+   97,
+   "Web Client",
+   "Medium",
+   "Service Requests",
+   "Tickets",
+   "Create or Add"
+  ],
+  [
+   6,
+   "demo-IA-1211",
+   "Check ticket fields when status is closed",
+   4,
+   "Web Client",
+   "Medium",
+   "Service Requests",
+   "Tickets",
+   "Checks"
+  ],
+  [
+   7,
+   "demo-IA-1305",
+   "Export invoices to PDF",
+   12,
+   "Web Client",
+   "High",
+   "Invoicing",
+   "Invoices",
+   "other TestCases"
+  ],
+  [
+   8,
+   "demo-IA-1306",
+   "Filter invoices by region and cost center",
+   1,
+   "Web Client",
+   "Medium",
+   "Invoicing",
+   "Invoices",
+   "Search"
+  ],
+  [
+   9,
+   "demo-IA-1401",
+   "Synchronize in mobile app",
+   61,
+   "Mobile App",
+   "Medium",
+   "Service Requests",
+   "Activities",
+   "other TestCases"
+  ],
+  [
+   10,
+   "demo-IA-1402",
+   "Complete job in mobile app",
+   18,
+   "Mobile App",
+   "Medium",
+   "Service Requests",
+   "Activities",
+   "other TestCases"
+  ],
+  [
+   11,
+   "demo-IA-1501",
+   "Start automated schedule in admin client",
+   3,
+   "Admin Client",
+   "High",
+   "Application",
+   "Start-Close",
+   "other TestCases"
+  ],
+  [
+   12,
+   "demo-IA-1602",
+   "Import orders from CSV",
+   2,
+   "",
+   "",
+   "",
+   "",
+   ""
+  ],
+  [
+   13,
+   "demo-IA-1603",
+   "Archive documents after 90 days",
+   1,
+   "",
+   "",
+   "",
+   "",
+   ""
+  ]
+ ],
+ "docs": [
+  {
+   "title": "Invoice list filter by region and cost center (FN-1051)",
+   "id": "20311",
+   "milestone": "V8.3 Sprint 2",
+   "idents": "US-5101;US-5102",
+   "status": "Approved",
+   "created": "12.08.2026",
+   "related": "2"
+  },
+  {
+   "title": "Import orders from CSV",
+   "id": "20318",
+   "milestone": "V8.3 Sprint 3",
+   "idents": "US-5140",
+   "status": "Approved",
+   "created": "28.09.2026",
+   "related": "1"
+  },
+  {
+   "title": "Mobile app: complete job offline",
+   "id": "20322",
+   "milestone": "V8.3 Sprint 3",
+   "idents": "US-5163",
+   "status": "In Review",
+   "created": "02.10.2026",
+   "related": "0"
+  }
+ ],
+ "errors_1": [
+  {
+   "id": "EI-101",
+   "title": "Session timeout during long test step",
+   "status": "Processing",
+   "type": "Error Infrastructure",
+   "runs": "[ 12 / 105 / 1160 ]",
+   "packages": 12,
+   "responsibles": "abc",
+   "first": "28.12.2018 23:36:57",
+   "last": "09.10.2026 00:53:52",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-102",
+   "title": "Import wizard slow or not responding",
+   "status": "Processing",
+   "type": "Error Infrastructure",
+   "runs": "[ 15 / 88 / 740 ]",
+   "packages": 15,
+   "responsibles": "efg",
+   "first": "29.12.2018 07:33:46",
+   "last": "11.10.2026 11:13:30",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-110",
+   "title": "Locator of field or control changed",
+   "status": "Assigned",
+   "type": "Error Technical View",
+   "runs": "[ 1 / 5 / 130 ]",
+   "packages": 1,
+   "responsibles": "efg",
+   "first": "09.08.2019 07:39:05",
+   "last": "05.10.2026 08:27:47",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-115",
+   "title": "Mobile app sync hanging or failed",
+   "status": "Processing",
+   "type": "Error Application",
+   "runs": "[ 1 / 7 / 255 ]",
+   "packages": 1,
+   "responsibles": "bcd;cde",
+   "first": "19.09.2020 01:44:49",
+   "last": "08.10.2026 16:42:27",
+   "app": "Mobile App Application"
+  },
+  {
+   "id": "EI-120",
+   "title": "Message 'Request failed with status 500' shown",
+   "status": "New",
+   "type": "Error Application",
+   "runs": "[ 1 / 110 / 520 ]",
+   "packages": 1,
+   "responsibles": "abc",
+   "first": "25.11.2024 11:40:15",
+   "last": "09.10.2026 18:25:28",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-121",
+   "title": "Object locked by another user",
+   "status": "Cancelled",
+   "type": "Error Technical View",
+   "runs": "[ 1 / 3 / 78 ]",
+   "packages": 1,
+   "responsibles": "abc",
+   "first": "17.01.2019 17:07:06",
+   "last": "01.10.2026 09:03:01",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-130",
+   "title": "Test package must be reworked",
+   "status": "Processing",
+   "type": "Error Technical View",
+   "runs": "[ 3 / 11 / 290 ]",
+   "packages": 3,
+   "responsibles": "efg",
+   "first": "15.02.2019 20:12:27",
+   "last": "06.10.2026 14:58:25",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-140",
+   "title": "Business process was changed (US-5140)",
+   "status": "Assigned",
+   "type": "Business Change",
+   "runs": "[ 1 / 4 / 35 ]",
+   "packages": 1,
+   "responsibles": "efg",
+   "first": "07.04.2022 06:41:03",
+   "last": "02.10.2026 13:05:21",
+   "app": "Web Client Application"
+  }
+ ],
+ "errors_2": [
+  {
+   "id": "EI-101",
+   "title": "Session timeout during long test step",
+   "status": "Processing",
+   "type": "Error Infrastructure",
+   "runs": "[ 12 / 109 / 1171 ]",
+   "packages": 12,
+   "responsibles": "abc",
+   "first": "28.12.2018 23:36:57",
+   "last": "16.10.2026 10:01:12",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-102",
+   "title": "Import wizard slow or not responding",
+   "status": "Processing",
+   "type": "Error Infrastructure",
+   "runs": "[ 15 / 88 / 743 ]",
+   "packages": 15,
+   "responsibles": "efg",
+   "first": "29.12.2018 07:33:46",
+   "last": "15.10.2026 11:13:30",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-110",
+   "title": "Locator of field or control changed",
+   "status": "Solved",
+   "type": "Error Technical View",
+   "runs": "[ 1 / 5 / 135 ]",
+   "packages": 1,
+   "responsibles": "efg",
+   "first": "09.08.2019 07:39:05",
+   "last": "05.10.2026 08:27:47",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-115",
+   "title": "Mobile app sync hanging or failed",
+   "status": "Solved",
+   "type": "Error Application",
+   "runs": "[ 1 / 7 / 261 ]",
+   "packages": 1,
+   "responsibles": "bcd;cde",
+   "first": "19.09.2020 01:44:49",
+   "last": "05.10.2026 16:42:27",
+   "app": "Mobile App Application"
+  },
+  {
+   "id": "EI-120",
+   "title": "Message 'Request failed with status 500' shown",
+   "status": "Processing",
+   "type": "Error Application",
+   "runs": "[ 1 / 115 / 531 ]",
+   "packages": 1,
+   "responsibles": "abc",
+   "first": "25.11.2024 11:40:15",
+   "last": "14.10.2026 18:25:28",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-121",
+   "title": "Object locked by another user",
+   "status": "Cancelled",
+   "type": "Error Technical View",
+   "runs": "[ 1 / 3 / 78 ]",
+   "packages": 1,
+   "responsibles": "abc",
+   "first": "17.01.2019 17:07:06",
+   "last": "01.10.2026 09:03:01",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-130",
+   "title": "Test package must be reworked",
+   "status": "Processing",
+   "type": "Error Technical View",
+   "runs": "[ 3 / 13 / 294 ]",
+   "packages": 3,
+   "responsibles": "efg",
+   "first": "15.02.2019 20:12:27",
+   "last": "12.10.2026 14:58:25",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-140",
+   "title": "Business process was changed (US-5140)",
+   "status": "Assigned",
+   "type": "Business Change",
+   "runs": "[ 1 / 4 / 37 ]",
+   "packages": 1,
+   "responsibles": "efg",
+   "first": "07.04.2022 06:41:03",
+   "last": "13.10.2026 13:05:21",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-150",
+   "title": "Contract not inactivated automatically",
+   "status": "New",
+   "type": "Error Application",
+   "runs": "[ 1 / 1 / 1 ]",
+   "packages": 1,
+   "responsibles": "abc",
+   "first": "16.10.2026 09:10:07",
+   "last": "16.10.2026 09:10:07",
+   "app": "Web Client Application"
+  },
+  {
+   "id": "EI-151",
+   "title": "Mobile app closes when opening related activity",
+   "status": "New",
+   "type": "Error Application",
+   "runs": "[ 1 / 1 / 1 ]",
+   "packages": 1,
+   "responsibles": "def",
+   "first": "14.10.2026 19:53:30",
+   "last": "14.10.2026 19:53:30",
+   "app": "Mobile App Application"
+  }
+ ]
+}

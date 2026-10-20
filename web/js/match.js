@@ -1,7 +1,10 @@
 // Links new functions (release notes) to test cases, specifications, procedures and PO sessions.
 import { normalize, similarity } from './util.js';
 
-export const COVER_COLS = ['session', 'test', 'spec', 'procedure'];
+export const ALL_COVER_COLS = ['regspec', 'test', 'spec', 'procedure', 'session'];
+export const COVER_COLS = ALL_COVER_COLS;
+/** Columns shown: the PO-session column only while the PO page is visible. */
+export const coverCols = ctx => ALL_COVER_COLS.filter(c => c !== 'session' || !ctx?.isHidden?.('transcripts'));
 
 export function codeRegex(settings) {
   try { return new RegExp(settings.feature_code_regex || '\\b[A-Z]{2,5}-\\d{2,6}\\b', 'g'); }
@@ -26,23 +29,46 @@ export function findMatches(feature, items, textOf, threshold) {
   return out.sort((a, b) => b.score - a.score);
 }
 
-export function buildCoverage({ features, tests, specs, transcripts, settings }) {
+/** Release-note functions plus one row per RegTest document whose user story is not in the release notes. */
+export function coverageRows(features, specs) {
+  const keys = new Set(features.map(f => String(f.key || '').toUpperCase()).filter(Boolean));
+  const extra = [];
+  for (const d of specs.filter(s => s.kind === 'regspec')) {
+    const ids = d.data?.idents || [];
+    if (ids.some(i => keys.has(i.toUpperCase()))) continue;
+    const key = ids[0] || d.key;
+    keys.add(String(key).toUpperCase());
+    extra.push({ id: 'doc:' + d.id, key, title: d.title, virtual: true, doc: d, body: ids.join(' '),
+      data: { release: d.data?.release || '', sprint: d.data?.sprint || '', module: '', idents: ids } });
+  }
+  return [...features, ...extra];
+}
+
+export function buildCoverage({ features, tests, specs, transcripts = [], errors = [], settings, cols = ALL_COVER_COLS }) {
   const thr = Number(settings.match_threshold) || 0.5;
   const specOnly = specs.filter(s => s.kind === 'spec');
   const procs = specs.filter(s => s.kind === 'procedure');
+  const regspecs = specs.filter(s => s.kind === 'regspec');
+  const openErrors = errors.filter(e => /^(new|assigned|processing|open)$/i.test(String(e.data?.status || '').trim()));
   const sessTexts = transcripts.map(tr => ({ ...tr, _text: `${tr.title}\n${tr.data?.cleaned || tr.data?.raw || ''}\n${tr.data?.summary || ''}` }));
-  return features.map(f => {
+  return coverageRows(features, specs).map(f => {
     const ov = f.data?.overrides || {};
+    const idsOf = f.data?.idents?.length ? f.data.idents : [f.key].filter(Boolean);
     const m = {
-      test: findMatches(f, tests, x => `${x.key} ${x.title} ${x.body} ${x.data?.feature || ''}`, thr),
+      regspec: f.virtual ? [{ item: f.doc, how: 'code', score: 1 }] : findMatches(f, regspecs, x => `${x.key} ${x.title} ${(x.data?.idents || []).join(' ')}`, thr),
+      test: findMatches(f, tests, x => `${x.key} ${x.title} ${x.body} ${x.data?.feature || ''} ${x.data?.main || ''} ${x.data?.sub || ''}`, Math.max(thr, 0.55)),
       spec: findMatches(f, specOnly, x => `${x.key} ${x.title} ${x.body}`, thr),
       procedure: findMatches(f, procs, x => `${x.key} ${x.title} ${x.body}`, thr),
       session: findMatches(f, sessTexts, x => x._text, Math.max(thr, 0.6)),
     };
     const status = {};
-    for (const c of COVER_COLS) status[c] = ov[c] === 'na' ? 'na' : ov[c] === 'ok' ? 'ok' : m[c].length ? (m[c][0].how === 'code' || m[c][0].score >= 0.75 ? 'ok' : 'weak') : 'gap';
-    const gaps = COVER_COLS.filter(c => status[c] === 'gap').length;
-    return { feature: f, m, status, gaps };
+    for (const c of ALL_COVER_COLS) {
+      status[c] = ov[c] === 'na' ? 'na' : ov[c] === 'ok' ? 'ok' : m[c].length ? (m[c][0].how === 'code' || m[c][0].score >= 0.75 ? 'ok' : 'weak') : 'gap';
+    }
+    if (status.regspec === 'ok' && m.regspec[0] && !/approved|freigegeben|done|aprobat/i.test(m.regspec[0].item.data?.status || '') && !ov.regspec) status.regspec = 'weak';
+    const errs = openErrors.filter(e => idsOf.some(id => hasKey(`${e.title} ${e.body || ''}`, id)));
+    const gaps = cols.filter(c => status[c] === 'gap').length;
+    return { feature: f, m, status, gaps, errors: errs };
   });
 }
 

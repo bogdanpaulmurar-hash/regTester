@@ -5,7 +5,8 @@ import { btn, clear, h, modal, toast } from './util.js';
 
 /**
  * opts: { title, section, accept, hint, fields: [{key, label, aliases, required}],
- *         toRecord(mapped, raw) -> record|null, fromDoc(fileData) -> records[], modes, defaultMode, api, onDone }
+ *         toRecord(mapped, raw) -> record|null, fromDoc(fileData) -> records[], collect(records, file) -> records[],
+ *         summary(records) -> Node, modes, defaultMode, api, onDone(result, records) }
  */
 export function openImport(opts) {
   let fileData = null, sheetIdx = 0, mapping = {}, mode = opts.defaultMode || 'upsert', table = null;
@@ -91,6 +92,7 @@ export function openImport(opts) {
     previewBox.appendChild(h('h3', null, t('import_preview', { n: recs.length })));
     if (missing.length) previewBox.appendChild(h('div', { class: 'chip warn' }, t('import_missing') + ': ' + missing.map(f => f.label).join(', ')));
     if (!recs.length) { previewBox.appendChild(h('div', { class: 'hint' }, t('import_nothing'))); return; }
+    if (opts.summary) previewBox.appendChild(opts.summary(recs));
     const cols = opts.previewCols || [['key', t('f_key')], ['title', t('f_title')], ['kind', t('f_type')]];
     previewBox.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
       h('thead', null, h('tr', null, cols.map(([, l]) => h('th', null, l)))),
@@ -108,7 +110,7 @@ export function openImport(opts) {
       const res = await opts.api.importRecords(opts.section, fileData.name, recs, mode);
       toast(t('import_done', res));
       close();
-      opts.onDone && opts.onDone(res);
+      opts.onDone && opts.onDone(res, recs, fileData);
     } catch (e) {
       toast(e.message, 'bad');
       importBtn.disabled = false;

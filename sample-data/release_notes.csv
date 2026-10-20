@@ -1,5 +1,5 @@
 ﻿ID;Title;Sprint;Release;Module;Description
-FN-1042;Export PDF facturi;S39;R-2026.4;Invoice;Invoices can be exported as PDF from the list.
-FN-1051;Filtru avansat clienți;S40;R-2026.4;Invoice;Filter invoices by customer region and cost center.
-FN-1055;Import comenzi din CSV;S40;R-2026.4;Orders;Orders can be imported from CSV files.
-FN-1060;Notificări e-mail scadență;S41;R-2026.4;Invoice;Reminder e-mail three days before due date.
+FN-1042;Export PDF facturi;S39;V8.3;Invoice;Invoices can be exported as PDF from the list.
+FN-1051;Filtru avansat clienți;S40;V8.3;Invoice;Filter invoices by customer region and cost center.
+FN-1055;Import comenzi din CSV;S40;V8.3;Orders;Orders can be imported from CSV files.
+FN-1060;Notificări e-mail scadență;S41;V8.3;Invoice;Reminder e-mail three days before due date.

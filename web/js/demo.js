@@ -1,9 +1,11 @@
 // Browser-only backend used when no regTester server answers (phone preview, quick look).
 // Same interface as RemoteApi; data lives in this browser's storage and starts with fictional examples.
-import { generateYear } from './timeline-gen.js';
-import { uid } from './util.js';
+import { diffErrors, snapshot, toItem, toRecord as errorRecord } from './errors.js';
+import { catalogFromList, regspecRecord } from './regtool.js';
+import { fromSharePoint } from './timeline-gen.js';
+import { addDays, parseIso, uid } from './util.js';
 
-const KEY = 'rt.demo.v2';
+const KEY = 'rt.demo.v3';
 const now = () => Date.now() / 1000;
 
 export const DEFAULT_TEMPLATE = {
@@ -25,10 +27,7 @@ function seed() {
   const add = (section, r) => recs.push({ id: uid(), section, kind: '', key: '', title: '', body: '', data: {}, tags: [], version: 1,
     created_at: now() - 86400 * 20, updated_at: now() - 86400 * 2, created_by: 'demo', updated_by: 'demo', import_id: null, ...r });
 
-  generateYear({ start: '2026-01-05', sprints: 26, sprintWeeks: 2, firstNumber: 31, prefix: 'Sprint', sprintsPerRelease: 3,
-    releasePrefix: 'R', releaseStart: 1, year: 2026, freezeDays: 1, regtestDays: 7, qaDays: 4, deployGapDays: 1,
-    holidays: ['2026-01-01', '2026-01-02', '2026-04-03', '2026-04-06', '2026-05-01', '2026-05-14', '2026-05-25', '2026-10-03', '2026-12-24', '2026-12-25', '2026-12-31'] })
-    .forEach(e => add('timeline', e));
+  fromSharePoint(demoTimelineRows()).records.forEach(e => add('timeline', e));
 
   const features = [
     ['FN-1042', 'Export PDF facturi', 'S39', 'Invoice'], ['FN-1051', 'Filtru avansat clienți', 'S40', 'Invoice'],
@@ -37,7 +36,7 @@ function seed() {
     ['FN-1047', 'Câmp Centru de cost pe comenzi', 'S40', 'Orders'], ['FN-1058', 'Dashboard stocuri', 'S41', 'Stock'],
     ['FN-1062', 'Limba germană în rapoarte', 'S41', 'Reports'],
   ];
-  features.forEach(([key, title, sprint, module]) => add('features', { key, title, data: { sprint, release: 'R-2026.4', module, description: '' } }));
+  features.forEach(([key, title, sprint, module]) => add('features', { key, title, data: { sprint, release: 'V8.3', module, description: '' } }));
 
   const tests = [
     ['TC-2201', 'FN-1055 import orders csv happy path', 'Orders'], ['TC-2202', 'FN-1055 import orders wrong delimiter', 'Orders'],
@@ -46,13 +45,24 @@ function seed() {
     ['TC-2224', 'FN-1058 stock dashboard totals', 'Stock'], ['TC-2230', 'FN-1062 report labels in German', 'Reports'],
     ['TC-1800', 'Invoice VAT total rounding', 'Invoice'], ['TC-1801', 'Customer K-77 order flow', 'Orders'],
   ];
-  tests.forEach(([key, title, module]) => add('tests', { key, title, data: { module, status: 'ready' } }));
+  tests.forEach(([key, title, module]) => add('tests', { key, title, data: { module, status: 'ready', app: 'Web Client', quality: 'Medium', count: 3, main: 'Demo functions', sub: module } }));
+  catalogFromList(DEMO_CATALOG).records.forEach(r => add('tests', r));
+  DEMO_DOCS.forEach(d => add('specs', regspecRecord(d)));
+  // two Error Management exports, a week apart
+  const first = DEMO_ERRORS_1.map(toItem), second = DEMO_ERRORS_2.map(toItem);
+  const stored = first.map(it => ({ key: it.id, ...errorRecord(it, null, '2026-10-13') }));
+  const diff1 = diffErrors([], first);
+  add('errsnaps', { ...snapshot(first, diff1, 'error_management_export_2026-10-13.xlsx', '2026-10-13'), created_at: now() - 86400 * 7 });
+  const diff2 = diffErrors(stored, second);
+  const byKey = new Map(stored.map(r => [r.key, r]));
+  second.forEach(it => add('errors', errorRecord(it, byKey.get(it.id), '2026-10-20')));
+  add('errsnaps', snapshot(second, diff2, 'error_management_export_2026-10-20.xlsx', '2026-10-20'));
 
   const specs = [
     ['spec', 'SP-310', 'Invoice filter by region and cost center (FN-1051)', 'Invoice list gets two new filters: customer region and cost center. Filters combine with AND. Empty cost center is shown as (none).', 'open', 'Invoice'],
     ['spec', 'SP-311', 'Archive retention rules', 'Documents are archived automatically 90 days after closing. Auditor role can read archived documents. FN-1033', 'done', 'Archive'],
     ['spec', 'SP-312', 'Auditor role permissions (FN-1036)', 'Read only access to invoices, orders and archive. No export of personal data.', 'done', 'Admin'],
-    ['spec', 'SP-313', 'Cost center field on orders (FN-1047)', 'Mandatory field for new orders, optional for orders created before release R-2026.4.', 'done', 'Orders'],
+    ['spec', 'SP-313', 'Cost center field on orders (FN-1047)', 'Mandatory field for new orders, optional for orders created before release V8.3.', 'done', 'Orders'],
     ['spec', 'SP-314', 'Stock dashboard (FN-1058)', 'Totals per warehouse, refreshed every 15 minutes, red when below minimum stock.', 'done', 'Stock'],
     ['spec', 'SP-315', 'German labels in reports (FN-1062)', 'All report labels translated; numbers formatted 1.234,56.', 'done', 'Reports'],
     ['spec', 'SP-316', 'Import orders from CSV (FN-1055)', 'Semicolon or comma delimiter, UTF-8, max 5 000 lines per file, error report per line.', 'done', 'Orders'],
@@ -62,13 +72,13 @@ function seed() {
     ['procedure', 'PR-123', 'Procedure: Stock dashboard check (FN-1058)', 'Compare dashboard totals with stock report for 3 warehouses.', 'done', 'Stock'],
     ['procedure', 'PR-124', 'Procedure: Filter customers in invoices (FN-1051)', 'Apply region Nord and cost center CC-200, compare with saved query.', 'done', 'Invoice'],
     ['procedure', 'PR-125', 'Procedure: German report check (FN-1062)', 'Switch user language to DE, print 3 reports, compare labels with glossary.', 'done', 'Reports'],
-    ['bug', 'BUG-2231', 'Rounding difference 0.01 in VAT total', 'VAT total differs by 0.01 when invoice has more than 20 lines with 19% VAT. Workaround: none. Fixed in R-2026.5.', 'open', 'Invoice'],
+    ['bug', 'BUG-2231', 'Rounding difference 0.01 in VAT total', 'VAT total differs by 0.01 when invoice has more than 20 lines with 19% VAT. Workaround: none. Fixed in V8.4.', 'open', 'Invoice'],
     ['bug', 'BUG-2240', 'Session expires during long test step', 'Session timeout 10 min hits long regtest step 5 in order flow; intermittent.', 'open', 'Orders'],
-    ['bug', 'BUG-2102', 'PDF export blank page with long customer names', 'Customer names longer than 80 chars produce an empty second page. Closed in R-2026.2.', 'closed', 'Invoice'],
+    ['bug', 'BUG-2102', 'PDF export blank page with long customer names', 'Customer names longer than 80 chars produce an empty second page. Closed in V8.1.', 'closed', 'Invoice'],
     ['issue', 'ISS-88', 'Sandbox refresh takes 6 hours', 'Refresh job is slow since the database grew; ask ops for weekend slot.', 'open', 'General'],
     ['issue', 'ISS-91', 'Test customer K-77 missing after refresh', 'Customer K-77 is not part of the production copy anymore; recreate with script before regtest.', 'open', 'General'],
   ];
-  specs.forEach(([kind, key, title, body, status, module]) => add('specs', { kind, key, title, body, tags: [module.toLowerCase()], data: { status, module, release: 'R-2026.4' } }));
+  specs.forEach(([kind, key, title, body, status, module]) => add('specs', { kind, key, title, body, tags: [module.toLowerCase()], data: { status, module, release: 'V8.3' } }));
 
   const baseTests = ['TC-1800', 'TC-1801', 'TC-2201', 'TC-2202', 'TC-2210', 'TC-2215', 'TC-2216', 'TC-2220', 'TC-2224', 'TC-2230'];
   const mkRun = (date, fails) => ({
@@ -87,7 +97,7 @@ function seed() {
     'TC-3004': 'Session expired during step 5', 'TC-2220': "Field 'CostCenter' is mandatory (order 88123)", 'TC-2201': "Field 'CostCenter' is mandatory (order 88130)",
     'TC-3011': 'PDF render timeout after 30s', 'TC-3012': 'PDF render timeout after 30s', 'TC-3013': 'PDF render timeout after 31s', 'TC-2230': "Label text changed: 'Rechnung' expected 'Invoice'",
   }));
-  add('known', { title: 'Rounding diff 0.01 in VAT total', data: { pattern: 'rounding diff 0.01 in vat total', reason: 'Known bug, fixed in R-2026.5', bug: 'BUG-2231' } });
+  add('known', { title: 'Rounding diff 0.01 in VAT total', data: { pattern: 'rounding diff 0.01 in vat total', reason: 'Known bug, fixed in V8.4', bug: 'BUG-2231' } });
   add('known', { title: 'Test data missing: customer K-77', data: { pattern: 'test data missing: customer k-77', reason: 'Recreate before regtest (ISS-91)', bug: 'ISS-91' } });
   add('known', { title: 'Label text changed', data: { pattern: 'label text changed', reason: 'Accepted: new German labels', bug: '' } });
 
@@ -97,7 +107,7 @@ function seed() {
   add('docs', {
     kind: 'doc', key: 'FN-1051', title: 'Filtru avansat clienți', data: {
       templateId: null, complete: false, source: '',
-      meta: { title: 'Filtru avansat clienți', code: 'FN-1051', sprint: 'S40', release: 'R-2026.4', module: 'Invoice' },
+      meta: { title: 'Filtru avansat clienți', code: 'FN-1051', sprint: 'S40', release: 'V8.3', module: 'Invoice' },
       values: {
         purpose: 'Lista de facturi poate fi filtrată după regiunea clientului și după centrul de cost.',
         users: 'Toate rolurile; export PDF doar admin.',
@@ -115,6 +125,88 @@ function seed() {
   });
   return { records: recs, history: [], imports: [], logs: [], settings: {} };
 }
+
+/** Fictional SharePoint timeline export in the real layout: group rows, US dates, a few planted mistakes. */
+export function demoTimelineRows() {
+  const us = d => `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+  const rows = [];
+  const ev = (v, kw, name, p, a, b) => rows.push({ version: v, keyword: kw, title: `${v} ${name}`, start: a === null ? '' : us(addDays(p, a)), end: a === null ? '' : us(addDays(p, b)), assigned: '', show: 'Ja' });
+  const grp = (v, sp) => rows.push({ version: v, keyword: `${v} ${sp} Regressionstest`, title: '', start: '', end: '', assigned: '', show: 'Ja' });
+  for (const [v, prod] of [['V8.1', '2026-03-14'], ['V8.2', '2026-07-11'], ['V8.3', '2026-11-14']]) {
+    const p = parseIso(prod);
+    grp(v, 'S1');
+    ev(v, 'Review', 'S1 Review', p, -134, -133); ev(v, 'MIG UAT', 'S1 Deployment MIG UAT', p, -131, -130);
+    ev(v, 'Integrationstest', 'S1 Integrationstest UAT', p, -129, -116); ev(v, 'Technical View', 'S1 Realisierung Technical View', p, null);
+    grp(v, 'S2');
+    ev(v, 'Review', 'S2 Review', p, -85, -84); ev(v, 'MIG UAT', 'S2 Deployment MIG UAT', p, -82, -81);
+    ev(v, 'Integrationstest', 'S2 Integrationstest UAT', p, -80, -67); ev(v, 'MIG UAT', 'S1&2 RegTest MIG UAT', p, -80, -74);
+    ev(v, 'Definition Business View', 'S2 Definition Business View', p, null);
+    grp(v, 'S3');
+    ev(v, 'Review', 'S3 Review', p, -50, -49); ev(v, 'MIG UAT', 'S3 Deployment MIG UAT', p, -47, -46);
+    ev(v, 'Integrationstest', 'S3 Integrationstest UAT', p, -45, -32); ev(v, 'MIG UAT', 'S3 RegTest MIG UAT OT 13.1', p, -45, -18);
+    ev(v, 'CORE LT', 'Deployment CORE LT', p, -19, -18); ev(v, 'CORE LT', 'RegTest CORE LT', p, -17, -8);
+    ev(v, 'CORE LT', 'LuP CORE LT', p, -5, -4); ev(v, 'Testprotokoll', 'Reg Testprotokoll erstellen', p, -3, -2);
+    ev(v, 'PROD', 'Deployment PROD', p, 0, 1);
+  }
+  ev('V8.3', 'PROD', 'Deployment PROD', parseIso('2026-11-14'), 0, 1); // duplicated row
+  const p4 = parseIso('2026-11-14');
+  grp('V8.4', 'S1');
+  ev('V8.4', 'Review', 'S1 Review', p4, -134, -133); // dates copied from V8.3, never adjusted
+  rows.push({ version: 'V8.4', keyword: 'MIG UAT', title: 'V8.4 S1 Deployment MIG UAT', start: '11/23/2026', end: '11/22/2026', assigned: '', show: 'Ja' });
+  rows.push({ version: '-', keyword: 'Urlaub', title: 'Urlaub Maria', start: '10/12/2026', end: '10/23/2026', assigned: 'Dan', show: 'Ja' });
+  rows.push({ version: '-', keyword: 'Urlaub', title: 'Urlaub Ion', start: '11/2/2026', end: '11/6/2026', assigned: 'Maria', show: 'Ja' });
+  return rows;
+}
+
+const DEMO_CATALOG = [
+  ['Demo TestCase List Report'],
+  ['Nr.', 'TestCase ID', 'TestCase Title', 'Count', 'Quality', 'Main Category', 'Sub Category', 'Secondary Category', 'Quality Comment'],
+  [1, 'demo-IA-1001', 'Start web client', 812, 'Web Client', 'High', 'Application', 'Start-Close', 'other TestCases'],
+  [2, 'demo-IA-1002', 'Login user to web client', 809, 'Web Client', 'High', 'Application', 'Login-Logout', 'other TestCases'],
+  [3, 'demo-IA-1103', 'Create company with location', 154, 'Web Client', 'High', 'Master Data', 'Company', 'Create or Add'],
+  [4, 'demo-IA-1104', 'Find and select company by name', 233, 'Web Client', 'High', 'Master Data', 'Company', 'Find and Select'],
+  [5, 'demo-IA-1210', 'Create ticket inside call', 97, 'Web Client', 'Medium', 'Service Requests', 'Tickets', 'Create or Add'],
+  [6, 'demo-IA-1211', 'Check ticket fields when status is closed', 4, 'Web Client', 'Medium', 'Service Requests', 'Tickets', 'Checks'],
+  [7, 'demo-IA-1305', 'Export invoices to PDF', 12, 'Web Client', 'High', 'Invoicing', 'Invoices', 'other TestCases'],
+  [8, 'demo-IA-1306', 'Filter invoices by region and cost center', 1, 'Web Client', 'Medium', 'Invoicing', 'Invoices', 'Search'],
+  [9, 'demo-IA-1401', 'Synchronize in mobile app', 61, 'Mobile App', 'Medium', 'Service Requests', 'Activities', 'other TestCases'],
+  [10, 'demo-IA-1402', 'Complete job in mobile app', 18, 'Mobile App', 'Medium', 'Service Requests', 'Activities', 'other TestCases'],
+  [11, 'demo-IA-1501', 'Start automated schedule in admin client', 3, 'Admin Client', 'High', 'Application', 'Start-Close', 'other TestCases'],
+  [12, 'demo-IA-1602', 'Import orders from CSV', 2, '', '', '', '', ''],
+  [13, 'demo-IA-1603', 'Archive documents after 90 days', 1, '', '', '', '', ''],
+];
+
+const DEMO_DOCS = [
+  { title: 'Invoice list filter by region and cost center (FN-1051)', id: '20311', milestone: 'V8.3 Sprint 2', idents: 'US-5101;US-5102', status: 'Approved', created: '12.08.2026', related: '2' },
+  { title: 'Import orders from CSV', id: '20318', milestone: 'V8.3 Sprint 3', idents: 'US-5140', status: 'Approved', created: '28.09.2026', related: '1' },
+  { title: 'Mobile app: complete job offline', id: '20322', milestone: 'V8.3 Sprint 3', idents: 'US-5163', status: 'In Review', created: '02.10.2026', related: '0' },
+];
+
+const e = (id, title, status, type, runs, pk, resp, first, last, app) => ({ id, title, status, type, runs, packages: pk, responsibles: resp, first, last, app });
+const DEMO_ERRORS_1 = [
+  e('EI-101', 'Session timeout during long test step', 'Processing', 'Error Infrastructure', '[ 12 / 105 / 1160 ]', 12, 'abc', '28.12.2018 23:36:57', '09.10.2026 00:53:52', 'Web Client Application'),
+  e('EI-102', 'Import wizard slow or not responding', 'Processing', 'Error Infrastructure', '[ 15 / 88 / 740 ]', 15, 'efg', '29.12.2018 07:33:46', '11.10.2026 11:13:30', 'Web Client Application'),
+  e('EI-110', 'Locator of field or control changed', 'Assigned', 'Error Technical View', '[ 1 / 5 / 130 ]', 1, 'efg', '09.08.2019 07:39:05', '05.10.2026 08:27:47', 'Web Client Application'),
+  e('EI-115', 'Mobile app sync hanging or failed', 'Processing', 'Error Application', '[ 1 / 7 / 255 ]', 1, 'bcd;cde', '19.09.2020 01:44:49', '08.10.2026 16:42:27', 'Mobile App Application'),
+  e('EI-120', "Message 'Request failed with status 500' shown", 'New', 'Error Application', '[ 1 / 110 / 520 ]', 1, 'abc', '25.11.2024 11:40:15', '09.10.2026 18:25:28', 'Web Client Application'),
+  e('EI-121', 'Object locked by another user', 'Cancelled', 'Error Technical View', '[ 1 / 3 / 78 ]', 1, 'abc', '17.01.2019 17:07:06', '01.10.2026 09:03:01', 'Web Client Application'),
+  e('EI-130', 'Test package must be reworked', 'Processing', 'Error Technical View', '[ 3 / 11 / 290 ]', 3, 'efg', '15.02.2019 20:12:27', '06.10.2026 14:58:25', 'Web Client Application'),
+  e('EI-140', 'Business process was changed (US-5140)', 'Assigned', 'Business Change', '[ 1 / 4 / 35 ]', 1, 'efg', '07.04.2022 06:41:03', '02.10.2026 13:05:21', 'Web Client Application'),
+];
+const DEMO_ERRORS_2 = [
+  e('EI-101', 'Session timeout during long test step', 'Processing', 'Error Infrastructure', '[ 12 / 109 / 1171 ]', 12, 'abc', '28.12.2018 23:36:57', '16.10.2026 10:01:12', 'Web Client Application'),
+  e('EI-102', 'Import wizard slow or not responding', 'Processing', 'Error Infrastructure', '[ 15 / 88 / 743 ]', 15, 'efg', '29.12.2018 07:33:46', '15.10.2026 11:13:30', 'Web Client Application'),
+  e('EI-110', 'Locator of field or control changed', 'Solved', 'Error Technical View', '[ 1 / 5 / 135 ]', 1, 'efg', '09.08.2019 07:39:05', '05.10.2026 08:27:47', 'Web Client Application'),
+  e('EI-115', 'Mobile app sync hanging or failed', 'Solved', 'Error Application', '[ 1 / 7 / 261 ]', 1, 'bcd;cde', '19.09.2020 01:44:49', '05.10.2026 16:42:27', 'Mobile App Application'),
+  e('EI-120', "Message 'Request failed with status 500' shown", 'Processing', 'Error Application', '[ 1 / 115 / 531 ]', 1, 'abc', '25.11.2024 11:40:15', '14.10.2026 18:25:28', 'Web Client Application'),
+  e('EI-121', 'Object locked by another user', 'Cancelled', 'Error Technical View', '[ 1 / 3 / 78 ]', 1, 'abc', '17.01.2019 17:07:06', '01.10.2026 09:03:01', 'Web Client Application'),
+  e('EI-130', 'Test package must be reworked', 'Processing', 'Error Technical View', '[ 3 / 13 / 294 ]', 3, 'efg', '15.02.2019 20:12:27', '12.10.2026 14:58:25', 'Web Client Application'),
+  e('EI-140', 'Business process was changed (US-5140)', 'Assigned', 'Business Change', '[ 1 / 4 / 37 ]', 1, 'efg', '07.04.2022 06:41:03', '13.10.2026 13:05:21', 'Web Client Application'),
+  e('EI-150', 'Contract not inactivated automatically', 'New', 'Error Application', '[ 1 / 1 / 1 ]', 1, 'abc', '16.10.2026 09:10:07', '16.10.2026 09:10:07', 'Web Client Application'),
+  e('EI-151', 'Mobile app closes when opening related activity', 'New', 'Error Application', '[ 1 / 1 / 1 ]', 1, 'def', '14.10.2026 19:53:30', '14.10.2026 19:53:30', 'Mobile App Application'),
+];
+
+export const DEMO_SAMPLE = { DEMO_CATALOG, DEMO_DOCS, DEMO_ERRORS_1, DEMO_ERRORS_2 };
 
 export const SAMPLE_VTT = `WEBVTT
 
@@ -139,7 +231,9 @@ const DEMO_SETTINGS = {
   feature_code_regex: '\\b[A-Z]{2,5}-\\d{2,6}\\b', match_threshold: 0.5, flaky_window: 5,
   filler_words: 'uh, um, uhm, ähm, äh, hmm, basically, you know, like, so so, yeah yeah, okay okay, also also, sozusagen',
   ai_prompt: 'From the transcript below extract, for every new function:\n1. Function name 2. What it does 3. Who can use it\n4. Preconditions 5. What must be tested 6. Open questions\nAnswer in {language}. Do not invent anything that is not in the text.',
-  timeline_colors: { sprint: '#2F6FB0', planning: '#7A5AA6', review: '#0F7C7C', deployment: '#B4441F', regtest: '#B07A12', qa: '#3B8B3B', freeze: '#5B6470', holiday: '#9AA3AE', other: '#6B7280' },
+  timeline_colors: { sprint: '#2F6FB0', planning: '#7A5AA6', review: '#0F7C7C', deployment: '#B4441F', regtest: '#B07A12', qa: '#3B8B3B', freeze: '#5B6470', holiday: '#9AA3AE', other: '#6B7280',
+    integration: '#2E8A6E', performance: '#A3456B', documentation: '#56708F', protocol: '#7C6A3E' },
+  hidden_pages: ['transcripts'], page_labels: {},
 };
 
 export class DemoApi {

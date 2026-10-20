@@ -25,7 +25,7 @@ MAX_BODY = 60 * 1024 * 1024
 # Which page (permission unit) a storage section belongs to.
 PAGE_OF = {
     "timeline": "timeline", "features": "coverage", "tests": "coverage", "runs": "triage",
-    "known": "triage", "transcripts": "transcripts", "glossary": "transcripts",
+    "known": "triage", "errors": "triage", "errsnaps": "triage", "transcripts": "transcripts", "glossary": "transcripts",
     "docs": "docs", "templates": "docs", "specs": "specs",
 }
 PAGES = ("dashboard", "timeline", "coverage", "triage", "transcripts", "docs", "specs")

@@ -16,7 +16,7 @@ export async function render(root, ctx) {
   let work = { id: null, version: null, title: '', date: iso(new Date()), source: '', raw: '', summary: '', outLang: ctx.settings.language || 'ro' };
 
   root.appendChild(h('div', { class: 'page-head' },
-    h('div', null, h('h1', null, t('nav_transcripts')), h('p', null, t('trs_intro')))));
+    h('div', null, h('h1', null, ctx.pageLabel('transcripts')), h('p', null, t('trs_intro')))));
   const tabBox = h('div'), body = h('div', { class: 'stack' });
   root.append(tabBox, body);
 

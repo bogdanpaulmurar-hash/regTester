@@ -8,7 +8,7 @@ the CSV/VTT samples are written with the standard library.
 from __future__ import annotations
 
 import csv
-import datetime as dt
+import json
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parent.parent / "sample-data"
@@ -23,62 +23,76 @@ def write_csv(name, header, rows):
 
 def main():
     OUT.mkdir(exist_ok=True)
-    # ---------------------------------------------------------- timeline
-    rows = []
-    start = dt.date(2027, 1, 4)
-    for i in range(6):
-        s = start + dt.timedelta(weeks=2 * i)
-        e = s + dt.timedelta(days=11)
-        rel = f"R-2027.{i // 3 + 1}"
-        rows += [["Sprint", f"Sprint {60 + i}", s, e, rel, f"Sprint {60 + i}", "Team Blau", ""],
-                 ["Sprintplanung", f"Sprint {60 + i} Planning", s, s, rel, f"Sprint {60 + i}", "PO", "Teams"],
-                 ["Review", f"Sprint {60 + i} Review", e, e, rel, f"Sprint {60 + i}", "PO", "Demo + video"]]
-        if i % 3 == 2:
-            r0 = e + dt.timedelta(days=3)
-            rows += [["Regressionstest", f"{rel} Regtest", r0, r0 + dt.timedelta(days=8), rel, "", "QA", ""],
-                     ["Q&A", f"{rel} Q&A", r0 + dt.timedelta(days=11), r0 + dt.timedelta(days=14), rel, "", "QA", ""],
-                     ["Go-Live", f"{rel} Deployment", r0 + dt.timedelta(days=16), r0 + dt.timedelta(days=16), rel, "", "Ops", ""]]
-    rows.append(["Feiertag", "Neujahr", dt.date(2027, 1, 1), dt.date(2027, 1, 1), "", "", "", ""])
-    header = ["Typ", "Titel", "Beginn", "Ende", "Release", "Sprint", "Verantwortlich", "Notizen"]
+    # ------------------------------------------- regtest tool & SharePoint exports
+    # Fictional data in the exact column layout of the real exports (see tools/sample_regtool.json;
+    # the browser demo uses the same data).
+    data = json.loads((Path(__file__).with_name("sample_regtool.json")).read_text(encoding="utf-8"))
     try:
         from openpyxl import Workbook
-        wb = Workbook(); ws = wb.active; ws.title = "Timeline 2027"
-        ws.append(header)
-        for r in rows:
-            ws.append(r)
-        for c in ws["C"][1:] + ws["D"][1:]:
-            c.number_format = "DD.MM.YYYY"
-        wb.save(OUT / "timeline_2027.xlsx")
+        wb = Workbook(); ws = wb.active; ws.title = "Timeline"
+        ws.append(["Timeline Version", "Schlagwort", "Vorgangsname", "Anfangsdatum", "Fälligkeitsdatum", "Zugewiesen an", "Anzeigen"])
+        for r in data["timeline"]:
+            ws.append([r["version"], r["keyword"], r["title"], r["start"], r["end"], r["assigned"], r["show"]])
+        wb.save(OUT / "timeline_sharepoint_export.xlsx")
 
-        wb = Workbook(); ws = wb.active; ws.title = "Testfaelle"
-        ws.append(["Test ID", "Name", "Ordner", "Anforderung", "Status"])
-        tests = [("TC-2201", "Import orders csv happy path", "Orders", "FN-1055"), ("TC-2210", "Reminder mail 3 days before due", "Invoice", "FN-1060"),
-                 ("TC-2216", "Auditor read only access", "Admin", "FN-1036"), ("TC-2220", "Cost center mandatory on order", "Orders", "FN-1047"),
-                 ("TC-2230", "Report labels in German", "Reports", "FN-1062"), ("TC-2240", "Invoice list filter by region", "Invoice", "")]
-        for tc in tests:
-            ws.append([*tc, "Ready"])
-        wb.save(OUT / "tests_export.xlsx")
+        em_head = ["Error-ID", "Title", "Error Status", "Error Type", "TestRunCount", "Affected TestPackages", "Responsibles",
+                   "First Time Stamp", "Last Time Stamp", "Application Name"]
+        for n, key in ((1, "errors_1"), (2, "errors_2")):
+            wb = Workbook(); ws = wb.active; ws.title = "Errors"
+            ws.append(["Demo Error Report"])
+            ws.append(em_head)
+            for e in data[key]:
+                ws.append([e["id"], e["title"], e["status"], e["type"], e["runs"], e["packages"], e["responsibles"], e["first"], e["last"], e["app"]])
+            wb.save(OUT / f"error_management_export_{n}.xlsx")
+
+        wb = Workbook(); ws = wb.active; ws.title = "TestCases"
+        for r in data["catalog"]:
+            ws.append(r)
+        wb.save(OUT / "testcases_list_export.xlsx")
+
+        wb = Workbook(); ws = wb.active; ws.title = "Tree"
+        ws.append(["TestCase Reporting Tree"])
+        tree = {}
+        for r in data["catalog"][2:]:
+            if r[5]:
+                tree.setdefault(r[5], {}).setdefault(r[6], {}).setdefault(r[7], []).append(r[2])
+        tree.setdefault("Orders", {}).setdefault("Import", {}).setdefault("other TestCases", []).append("Import orders from CSV")
+        for main, subs in tree.items():
+            ws.append([main])
+            for sub, secs in subs.items():
+                ws.append(["", sub])
+                for sec, titles in secs.items():
+                    ws.append(["", "", sec])
+                    for title in titles:
+                        ws.append(["", "", "", title])
+        wb.save(OUT / "testcases_tree_export.xlsx")
+
+        wb = Workbook(); ws = wb.active; ws.title = "Documents"
+        ws.append(["Demo Document Report"])
+        ws.append(["No", "Title", "ID", "Milestone", "Idents", "Status", "Created", "CreatedBy", "Related Items", "CheckedOut", "Hint"])
+        for i, d in enumerate(data["docs"], 1):
+            ws.append([i, d["title"], d["id"], d["milestone"], d["idents"], d["status"], d["created"], "demo-user", d["related"], "", ""])
+        wb.save(OUT / "document_management_export.xlsx")
 
         wb = Workbook(); ws = wb.active; ws.title = "Bugs"
         ws.append(["Issue key", "Issue Type", "Summary", "Description", "Status", "Component", "Fix Version", "Labels"])
-        ws.append(["BUG-2301", "Bug", "Export button disabled for auditor", "Auditor sees the export button greyed out although read access exists.", "Open", "Admin", "R-2026.4", "auditor, export"])
-        ws.append(["BUG-2302", "Bug", "Cost center not copied to invoice", "When an order becomes an invoice the cost center is empty.", "In Progress", "Invoice", "R-2026.4", "costcenter"])
+        ws.append(["BUG-2301", "Bug", "Export button disabled for auditor", "Auditor sees the export button greyed out although read access exists.", "Open", "Admin", "V8.3", "auditor, export"])
+        ws.append(["BUG-2302", "Bug", "Cost center not copied to invoice", "When an order becomes an invoice the cost center is empty.", "In Progress", "Invoice", "V8.3", "costcenter"])
         ws.append(["ISS-95", "Issue", "Sandbox mail server not reachable", "Reminder mails cannot be tested in sandbox since Monday.", "Open", "General", "", "sandbox, mail"])
         wb.save(OUT / "bugs_export.xlsx")
     except ImportError:
         print("openpyxl missing: .xlsx samples skipped")
-    write_csv("timeline_2027.csv", header, [[*r[:2], r[2].strftime("%d.%m.%Y"), r[3].strftime("%d.%m.%Y"), *r[4:]] for r in rows])
 
     # ----------------------------------------------------- release notes
     feats = [("FN-1042", "Export PDF facturi", "S39", "Invoice", "Invoices can be exported as PDF from the list."),
              ("FN-1051", "Filtru avansat clienți", "S40", "Invoice", "Filter invoices by customer region and cost center."),
              ("FN-1055", "Import comenzi din CSV", "S40", "Orders", "Orders can be imported from CSV files."),
              ("FN-1060", "Notificări e-mail scadență", "S41", "Invoice", "Reminder e-mail three days before due date.")]
-    write_csv("release_notes.csv", ["ID", "Title", "Sprint", "Release", "Module", "Description"], [[k, t, s, "R-2026.4", m, d] for k, t, s, m, d in feats])
+    write_csv("release_notes.csv", ["ID", "Title", "Sprint", "Release", "Module", "Description"], [[k, t, s, "V8.3", m, d] for k, t, s, m, d in feats])
     try:
         from docx import Document
         doc = Document()
-        doc.add_heading("Release Notes R-2026.4", 0)
+        doc.add_heading("Release Notes V8.3", 0)
         for k, t, s, m, d in feats:
             doc.add_heading(f"{k} {t}", level=2)
             doc.add_paragraph(f"Sprint {s} · Modul {m}")

@@ -3,12 +3,13 @@ import { openEditor } from '../editor.js';
 import { historyTab } from '../history-view.js';
 import { t } from '../i18n.js';
 import { openImport } from '../importer.js';
+import { DM_FIELDS, regspecRecord } from '../regtool.js';
 import { indexDoc, search, similarTo } from '../search.js';
 import { btn, chip, clear, debounce, download, emptyState, fmtDate, h, highlight, iso, modal, seg, snippet, store, tabs, toCsv } from '../util.js';
 
-export const SPEC_KINDS = ['spec', 'bug', 'issue', 'procedure', 'note'];
-const KIND_CHIP = { spec: 'info', bug: 'bad', issue: 'warn', procedure: 'ok', note: '' };
-const STATUS_CHIP = { open: 'warn', 'in progress': 'info', done: 'ok', closed: '', obsolete: '' };
+export const SPEC_KINDS = ['spec', 'regspec', 'bug', 'issue', 'procedure', 'note'];
+const KIND_CHIP = { spec: 'info', regspec: 'info', bug: 'bad', issue: 'warn', procedure: 'ok', note: '' };
+const STATUS_CHIP = { approved: 'ok', freigegeben: 'ok', open: 'warn', 'in progress': 'info', done: 'ok', closed: '', obsolete: '' };
 
 export async function render(root, ctx, params) {
   const st = Object.assign({ tab: 'search', q: '', fuzzy: true, sort: 'score', saved: [] }, store('specs') || {});
@@ -17,7 +18,7 @@ export async function render(root, ctx, params) {
   let docs = [];
 
   root.appendChild(h('div', { class: 'page-head' },
-    h('div', null, h('h1', null, t('nav_specs')), h('p', null, t('specs_intro'))),
+    h('div', null, h('h1', null, ctx.pageLabel('specs')), h('p', null, t('specs_intro'))),
     h('div', { class: 'actions' }, canWrite ? [btn(t('import'), importDialog, { icon: 'upload' }), btn(t('specs_new'), () => edit(null), { icon: 'plus', cls: 'primary' })] : null)));
   const tabBox = h('div'), body = h('div', { class: 'stack' });
   root.append(tabBox, body);
@@ -175,7 +176,17 @@ export async function render(root, ctx, params) {
         h('label', { class: 'field' }, t('specs_import_split'), h('select', { onchange: e => { split = e.target.value; } },
           h('option', { value: 'headings' }, t('specs_split_headings')), h('option', { value: 'one' }, t('specs_split_one')))),
         h('p', { class: 'hint' }, t('specs_import_hint'))],
-      footer: c => [btn(t('cancel'), c), btn(t('continue'), () => { c(); runImport(kind, split); }, { cls: 'primary' })],
+      footer: c => [btn(t('cancel'), c), btn(t('continue'), () => { c(); if (kind === 'regspec') importRegspecs(); else runImport(kind, split); }, { cls: 'primary' })],
+    });
+  }
+
+  function importRegspecs() {
+    openImport({
+      api: ctx.api, section: 'specs', title: t('import') + ' · ' + t('sk_regspec'), accept: '.xlsx,.xlsm,.csv', hint: t('rs_import_hint'),
+      fields: DM_FIELDS.map(f => ({ ...f, label: t('dm_' + f.key) })),
+      toRecord: m => regspecRecord(m),
+      previewCols: [['key', t('f_key')], ['title', t('f_title')], ['data.milestone', t('dm_milestone')], ['data.status', t('f_status')]],
+      onDone: () => { ctx.invalidate('specs'); load(true); },
     });
   }
 

@@ -28,7 +28,7 @@ export async function render(root, ctx) {
   let templates = [], docs = [];
   let work = null;
 
-  root.appendChild(h('div', { class: 'page-head' }, h('div', null, h('h1', null, t('nav_docs')), h('p', null, t('docs_intro')))));
+  root.appendChild(h('div', { class: 'page-head' }, h('div', null, h('h1', null, ctx.pageLabel('docs')), h('p', null, t('docs_intro')))));
   const tabBox = h('div'), body = h('div', { class: 'stack' });
   root.append(tabBox, body);
 

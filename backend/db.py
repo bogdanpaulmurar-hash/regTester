@@ -23,6 +23,8 @@ SECTIONS = (
     "tests",         # export of test cases from the regtest tool
     "runs",          # regtest result runs (one record per run)
     "known",         # known errors list used by triage
+    "errors",        # error items from the regtest tool (Error Management export)
+    "errsnaps",      # one snapshot per Error Management import, for change tracking
     "transcripts",   # cleaned PO session transcripts
     "glossary",      # wrong term -> correct term
     "docs",          # generated documentation
@@ -58,7 +60,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "sprint": "#2F6FB0", "planning": "#7A5AA6", "review": "#0F7C7C",
         "deployment": "#B4441F", "regtest": "#B07A12", "qa": "#3B8B3B",
         "freeze": "#5B6470", "holiday": "#9AA3AE", "other": "#6B7280",
+        "integration": "#2E8A6E", "performance": "#A3456B", "documentation": "#56708F", "protocol": "#7C6A3E",
     },
+    # pages left out of the menu (data is kept) and custom menu names
+    "hidden_pages": ["transcripts"],
+    "page_labels": {},
 }
 
 ROLES = ("admin", "editor", "viewer")
@@ -155,9 +161,12 @@ class Database:
         out = json.loads(json.dumps(DEFAULT_SETTINGS))
         for row in self.q("SELECT key, value FROM settings"):
             try:
-                out[row["key"]] = json.loads(row["value"])
+                val = json.loads(row["value"])
             except ValueError:
-                out[row["key"]] = row["value"]
+                val = row["value"]
+            default = DEFAULT_SETTINGS.get(row["key"])
+            # keep defaults for keys added in later versions (e.g. colours of new timeline kinds)
+            out[row["key"]] = {**default, **val} if isinstance(default, dict) and default and isinstance(val, dict) else val
         return out
 
     def set_settings(self, values: dict[str, Any], user: str) -> dict[str, Any]:

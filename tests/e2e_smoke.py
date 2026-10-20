@@ -70,30 +70,57 @@ def main():
                     page.wait_for_selector(".dialog", state="detached", timeout=8000)
                 page.wait_for_timeout(300)
 
-            # timeline: excel import + generator
+            # timeline: SharePoint export + quality check + next release
             page.goto(BASE + "#timeline"); page.wait_for_selector(".page-head")
             page.evaluate("localStorage.setItem('rt.lang', JSON.stringify('en'))"); page.reload(); page.wait_for_selector(".page-head")
-            upload("Import Excel", "timeline_2027.xlsx")
+            upload("Import SharePoint export", "timeline_sharepoint_export.xlsx")
             tl = api("records?section=timeline", token)
-            assert len(tl) >= 25, f"timeline import: {len(tl)}"
+            assert len(tl) >= 60, f"timeline import: {len(tl)}"
             kinds = {r["kind"] for r in tl}
-            assert {"sprint", "planning", "review", "regtest", "qa", "deployment", "holiday"} <= kinds, kinds
-            assert any(r["data"]["start"] == "2027-01-04" for r in tl), "date conversion"
-            page.get_by_role("button", name="Generate year").click()
-            page.click(".dialog footer .btn.primary"); page.wait_for_timeout(600)
-            assert len(api("records?section=timeline", token)) > 80, "generator"
+            assert {"sprint", "review", "deployment", "integration", "regtest", "performance", "protocol", "documentation", "holiday"} <= kinds, kinds
+            prod = [r for r in tl if r["title"] == "V8.3 Deployment PROD"]
+            assert len(prod) == 1 and prod[0]["data"]["start"] == "2026-11-14" and prod[0]["data"]["env"] == "PROD", prod
+            assert prod[0]["data"].get("dup_count") == 2, "duplicate merged"
+            hol = [r for r in tl if r["kind"] == "holiday"]
+            assert hol and hol[0]["data"].get("substitute"), hol
+            page.get_by_role("tab", name="Data quality").click(); page.wait_for_timeout(300)
+            q = page.inner_text(".page")
+            assert "Dates copied from another release" in q and "End before start" in q, q[:600]
+            n_before = len(tl)
+            page.get_by_role("button", name="Plan next release").click()
+            page.wait_for_selector(".dialog"); page.get_by_role("button", name="Create release").click(); page.wait_for_timeout(700)
+            tl2 = api("records?section=timeline", token)
+            assert len(tl2) > n_before + 15, (n_before, len(tl2))
+            assert any(r["title"] == "V8.4 Deployment PROD" and r["data"]["start"] > "2027-01-01" for r in tl2), "clone"
             for view in ["Calendar", "Year", "List", "Timeline", "History"]:
                 page.get_by_role("tab", name=view).click(); page.wait_for_timeout(250)
 
-            # coverage
+            # test case catalogue + coverage
             page.goto(BASE + "#coverage"); page.wait_for_selector(".page-head")
+
+            def pick(button_text, file):
+                with page.expect_file_chooser() as fc:
+                    page.get_by_role("button", name=button_text).first.click()
+                fc.value.set_files(str(SAMPLES / file))
+                page.wait_for_selector(".dialog footer .btn.primary")
+                page.click(".dialog footer .btn.primary")
+                page.wait_for_selector(".dialog", state="detached", timeout=8000)
+                page.wait_for_timeout(300)
+
+            pick("Import test case export", "testcases_list_export.xlsx")
+            tests = api("records?section=tests", token)
+            assert len(tests) == 13, len(tests)
+            t1 = next(x for x in tests if x["key"] == "demo-IA-1103")
+            assert t1["data"]["app"] == "Web Client" and t1["data"]["quality"] == "High" and t1["data"]["main"] == "Master Data", t1
+            pick("Import test case export", "testcases_tree_export.xlsx")
+            tests = api("records?section=tests", token)
+            assert next(x for x in tests if x["key"] == "demo-IA-1602")["data"]["main"] == "Orders", "tree merge"
             upload("Import release notes", "release_notes.docx")
             feats = api("records?section=features", token)
             assert {f["key"] for f in feats} >= {"FN-1042", "FN-1051", "FN-1055", "FN-1060"}, feats
-            upload("Import test export", "tests_export.xlsx")
-            assert len(api("records?section=tests", token)) == 6
+            page.get_by_role("tab", name="Matrix").click(); page.wait_for_timeout(300)
 
-            # specs
+            # specs (incl. RegTest documents from Document Management)
             page.goto(BASE + "#specs"); page.wait_for_selector(".page-head")
             page.get_by_role("button", name="Import").first.click(); page.click(".dialog footer .btn.primary")
             with page.expect_file_chooser() as fc:
@@ -106,8 +133,16 @@ def main():
                 page.click(".dialog .drop")
             fc.value.set_files(str(SAMPLES / "procedures_onenote_export.docx"))
             page.wait_for_selector(".dialog footer .btn.primary:not([disabled])"); page.click(".dialog footer .btn.primary"); page.wait_for_timeout(500)
+            page.get_by_role("button", name="Import").first.click()
+            page.select_option(".dialog select >> nth=0", "regspec"); page.click(".dialog footer .btn.primary")
+            with page.expect_file_chooser() as fc:
+                page.click(".dialog .drop")
+            fc.value.set_files(str(SAMPLES / "document_management_export.xlsx"))
+            page.wait_for_selector(".dialog footer .btn.primary:not([disabled])"); page.click(".dialog footer .btn.primary"); page.wait_for_timeout(500)
             specs = api("records?section=specs", token)
-            assert {s["kind"] for s in specs} >= {"bug", "issue", "procedure"}, specs
+            assert {s["kind"] for s in specs} >= {"bug", "issue", "procedure", "regspec"}, specs
+            rs = next(s for s in specs if s["key"] == "DOC-20311")
+            assert rs["data"]["release"] == "V8.3" and rs["data"]["sprint"] == "S2" and rs["data"]["idents"] == ["US-5101", "US-5102"], rs
             assert any(s["key"] == "PR-130" for s in specs), [s["title"] for s in specs]
             page.fill("#spec-q", "costcenter type:bug"); page.wait_for_timeout(400)
             assert page.locator("article").count() == 1, page.locator("article").count()
@@ -117,13 +152,35 @@ def main():
             page.locator(".drawer").get_by_role("tab", name="History").click(); page.wait_for_timeout(300)
             page.keyboard.press("Escape")
 
-            # triage
+            # errors & runs
             page.goto(BASE + "#triage"); page.wait_for_selector(".page-head")
+            upload("Import Error Management", "error_management_export_1.xlsx")
+            upload("Import Error Management", "error_management_export_2.xlsx")
+            errs = api("records?section=errors", token)
+            assert len(errs) == 10, len(errs)
+            e110 = next(e for e in errs if e["key"] == "EI-110")
+            assert e110["data"]["status"] == "Solved" and e110["data"]["prev_status"] == "Assigned" and e110["data"]["runs"] == [1, 5, 135], e110
+            snaps = sorted(api("records?section=errsnaps", token), key=lambda r: r["created_at"])
+            assert len(snaps) == 2 and snaps[-1]["data"]["added"] == ["EI-150", "EI-151"], snaps[-1]["data"]
+            assert len(snaps[-1]["data"]["status"]) == 3, snaps[-1]["data"]["status"]
+            text = page.inner_text(".page")
+            assert "EI-150" in text, text[:400]
+            page.get_by_role("tab", name="Error items").click(); page.wait_for_timeout(300)
+            page.get_by_role("tab", name="Run results").click(); page.wait_for_timeout(200)
             upload("Import results", "regtest_run_2026-10-31.csv")
             upload("Import results", "regtest_run_2026-11-03.csv")
             assert len(api("records?section=runs", token)) == 2
+            page.get_by_role("tab", name="Run results").click(); page.wait_for_timeout(300)
             text = page.inner_text(".page")
             assert "New" in text and "Resolved" in text, text[:400]
+
+            # PO sessions are hidden by default; show them again from Administration
+            assert page.locator("nav a[data-page=transcripts]").count() == 0, "PO page should be hidden"
+            page.goto(BASE + "#admin"); page.wait_for_selector(".page-head")
+            page.get_by_role("tab", name="Pages").click(); page.wait_for_selector("#pg-transcripts")
+            page.check("#pg-transcripts"); page.fill("#pg-n-transcripts", "Demo sessions")
+            page.locator(".page .btn.primary").last.click(); page.wait_for_timeout(600)
+            assert page.locator("nav a[data-page=transcripts]").inner_text().strip().endswith("Demo sessions")
 
             # transcripts
             page.goto(BASE + "#transcripts"); page.wait_for_selector(".page-head")
@@ -149,7 +206,7 @@ def main():
                 page.reload(); page.wait_for_selector(".page-head", timeout=8000)
                 for pg in ["dashboard", "timeline", "coverage", "triage", "transcripts", "docs", "specs", "history", "logs", "settings", "admin"]:
                     page.evaluate(f"location.hash = '{pg}'"); page.wait_for_timeout(600); page.wait_for_selector(".page-head", timeout=8000)
-                    assert "Error" not in page.inner_text(".page")[:60]
+                    assert page.locator(".page > .card > pre.pre").count() == 0, f"{lang}/{pg}: " + page.inner_text(".page")[:300]
             hist = api("history?limit=1000", token)
             assert any(h["action"] == "import" for h in hist)
             logs = api("logs?limit=200", token)

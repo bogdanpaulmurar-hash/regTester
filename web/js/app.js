@@ -18,8 +18,9 @@ const SYSTEM = [
   ['settings', 'gear', () => import('./views/settings.js')],
   ['admin', 'shield', () => import('./views/admin.js')],
 ];
+export const MAIN_PAGES = PAGES.map(([id]) => id);
 export const PAGE_OF = {
-  timeline: 'timeline', features: 'coverage', tests: 'coverage', runs: 'triage', known: 'triage',
+  timeline: 'timeline', features: 'coverage', tests: 'coverage', runs: 'triage', known: 'triage', errors: 'triage', errsnaps: 'triage',
   transcripts: 'transcripts', glossary: 'transcripts', docs: 'docs', templates: 'docs', specs: 'specs',
 };
 
@@ -31,8 +32,11 @@ function applyTheme(theme) {
   if (theme === 'light' || theme === 'dark') root.setAttribute('data-theme', theme); else root.removeAttribute('data-theme');
 }
 
+ctx.isHidden = p => (ctx.settings?.hidden_pages || []).includes(p) && PAGES.some(([id]) => id === p);
+ctx.pageLabel = p => String((ctx.settings?.page_labels || {})[p] || '').trim() || t('nav_' + p);
 ctx.canPage = p => {
   const u = ctx.user; if (!u) return false;
+  if (ctx.isHidden(p)) return false;
   if (['history', 'logs', 'settings'].includes(p)) return true;
   if (p === 'admin') return u.role === 'admin';
   return (ctx.pages || []).includes(p);
@@ -46,6 +50,7 @@ ctx.canWriteSection = section => {
 };
 ctx.navigate = page => { if (location.hash !== '#' + page) location.hash = page; else route(); };
 ctx.reloadSettings = async () => { ctx.settings = await ctx.api.settings(); applyTheme(ctx.settings.theme); };
+ctx.rebuildShell = () => { shell(); route(); };
 ctx.records = async (section, force) => {
   if (force || !ctx.cache[section]) ctx.cache[section] = await ctx.api.list(section);
   return ctx.cache[section];
@@ -60,7 +65,7 @@ function shell() {
     [['ro', 'Română'], ['en', 'English'], ['de', 'Deutsch']].map(([v, l]) => h('option', { value: v, selected: t.lang() === v }, l)));
   const theme = h('select', { 'aria-label': t('theme'), onchange: e => { store('theme', e.target.value); applyTheme(e.target.value); } },
     [['auto', t('theme_auto')], ['light', t('theme_light')], ['dark', t('theme_dark')]].map(([v, l]) => h('option', { value: v, selected: (store('theme') || ctx.settings.theme) === v }, l)));
-  const link = ([id, ic]) => h('a', { href: '#' + id, 'data-page': id, onclick: () => closeNav() }, icon(ic), t('nav_' + id));
+  const link = ([id, ic]) => h('a', { href: '#' + id, 'data-page': id, onclick: () => closeNav() }, icon(ic), ctx.pageLabel(id));
   navEl = h('nav', { class: 'nav', 'aria-label': t('nav_main') },
     h('div', { class: 'brand' }, h('img', { src: ctx.api.logoUrl(), alt: '' }),
       h('div', null, h('b', null, ctx.settings.app_name || 'regTester'), h('small', null, ctx.api.demo ? t('demo_short') : t('tagline')))),
@@ -91,8 +96,8 @@ async function route() {
   const all = [...PAGES, ...SYSTEM];
   const def = all.find(([id]) => id === page && ctx.canPage(id)) || all[0];
   navEl.querySelectorAll('a[data-page]').forEach(a => a.classList.toggle('on', a.dataset.page === def[0]));
-  const tp = document.getElementById('topbar-page'); if (tp) tp.textContent = t('nav_' + def[0]);
-  document.title = `${t('nav_' + def[0])} · ${ctx.settings.app_name || 'regTester'}`;
+  const tp = document.getElementById('topbar-page'); if (tp) tp.textContent = ctx.pageLabel(def[0]);
+  document.title = `${ctx.pageLabel(def[0])} · ${ctx.settings.app_name || 'regTester'}`;
   const my = ++routeToken;
   clear(pageEl);
   pageEl.appendChild(h('div', { class: 'hint' }, t('loading')));

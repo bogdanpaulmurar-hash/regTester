@@ -225,7 +225,11 @@ export async function readFile(file) {
 
 /** First non-empty row becomes the header; returns {headers, rows:[{header: value}]} */
 export function sheetToObjects(rows) {
-  const start = rows.findIndex(r => r.filter(c => String(c).trim() !== '').length >= Math.min(2, r.length));
+  // Exports often carry a title line ("Error Report") above the real header: take the first row that is
+  // nearly as wide as the widest of the first rows.
+  const filled = r => (r || []).filter(c => String(c ?? '').trim() !== '').length;
+  const widest = Math.max(0, ...rows.slice(0, 15).map(filled));
+  const start = rows.findIndex(r => filled(r) >= Math.max(Math.min(2, widest), Math.ceil(widest * 0.6)));
   if (start < 0) return { headers: [], rows: [] };
   const headers = rows[start].map((h, i) => String(h).trim() || `Col ${i + 1}`);
   const out = rows.slice(start + 1).map(r => Object.fromEntries(headers.map((hd, i) => [hd, r[i] ?? ''])))

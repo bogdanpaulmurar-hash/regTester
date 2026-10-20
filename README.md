@@ -17,13 +17,15 @@ Fără tray: `python regtester.py --no-tray` (oprire cu Ctrl+C).
 
 | Secțiune | Ce încarci | Ce primești |
 |---|---|---|
-| **Panou release** | – | Faza curentă a release-ului, ce mai e de făcut înainte de regtest, următoarele 3 săptămâni |
-| **Timeline** | Excel/CSV cu evenimente, sau reguli (generator de an) | Vederi Timeline (Gantt scrolabil), Calendar scrolabil pe luni, An, Listă; filtre pe tip, release, perioadă, căutare; export CSV și `.ics` pentru Outlook |
-| **Acoperire** | Release notes (Excel/CSV/Word/HTML), export test case-uri | Matrice: fiecare funcție nouă × sesiune PO × test case × specificație × procedură; goluri, marcaje manuale, listă de goluri de copiat |
-| **Triere regtest** | Export rezultate rulare (Excel/CSV) | Erori grupate după mesaj; noi / încă deschise / cunoscute / intermitente / rezolvate; trend; raport pentru Teams |
-| **Sesiuni PO** | Transcriere Teams (`.vtt`, `.docx`, text) | Text curățat (fără umplutură și repetiții), termeni corectați din glosar, funcții recunoscute, prompt fix pentru AI-ul permis de firmă, rezumat salvat |
-| **Documentație** | Formular, sau document Word existent | Document în ordinea și stilul șablonului, copiere pentru OneNote / tool-ul de regtest, `.html`, `.md` |
-| **Specificații** | Excel/CSV (exporturi bug tracker), Word/HTML (pagini OneNote exportate) | Bază unică pentru specificații, bug-uri, issue-uri, proceduri; căutare avansată; intrări asemănătoare |
+| **Panou release** | – | Release-ul curent (următorul PROD), pașii lui (sprinturi → MIG UAT → CORE LT → PROD), fereastra de regtest, erori deschise/noi, ce mai e de făcut, următoarele 4 săptămâni |
+| **Timeline** | Exportul listei Timeline din SharePoint (Excel/CSV, coloanele listei) | Gantt, Calendar, An, Listă; filtre pe release, mediu (MIG UAT / CORE LT / PROD), produs, tip; tab **Calitatea datelor** (date copiate din alt release, duplicate, sfârșit înainte de început, release/sprint greșit); **Planifică release-ul următor** (copiază un release cu decalaj în săptămâni); export în formatul SharePoint și `.ics` |
+| **Test cases & acoperire** | Exportul de test cases din toolul de regtest (lista sau arborele de categorii), release notes | Catalog pe categorii, aplicație, calitate, utilizări; matrice funcție nouă × document RegTest × test case × specificație × procedură, cu erorile deschise |
+| **Erori & run-uri** | Exportul Error Management (Excel), opțional rezultatele unui run | Erorile cu status, run-uri, responsabili; ce s-a schimbat față de exportul anterior (noi, status schimbat, mai multe run-uri, dispărute); erori apărute în fereastra de regtest; istoric pe fiecare eroare; raport de copiat |
+| **Documentație** | Formular, sau document Word existent | Document în ordinea și stilul șablonului, copiere pentru OneNote / toolul de regtest, `.html`, `.md` |
+| **Specificații** | Exportul Document Management (documente RegTest), exporturi bug tracker, Word/HTML | Bază unică pentru documente RegTest, specificații, bug-uri, proceduri; căutare avansată |
+| **Sesiuni PO** (ascunsă implicit) | Transcriere Teams (`.vtt`, `.docx`, text) | Text curățat, funcții recunoscute, rezumat salvat |
+
+Exporturile se citesc așa cum ies din tool: rândul de titlu de deasupra antetului e sărit, coloanele sunt recunoscute după nume sau după conținut (de ex. exportul de test cases are antetul decalat cu o coloană), iar datele `dd.mm.yyyy` și `M/D/YYYY` sunt detectate automat.
 
 Fiecare secțiune are tab-ul **Istoric**: fișierele importate și fiecare modificare (cine, când, ce câmp), cu comparare înainte/după și **restaurare**.
 
@@ -37,13 +39,13 @@ Fiecare secțiune are tab-ul **Istoric**: fișierele importate și fiecare modif
 | `pdf OR export` | oricare |
 | `archiv*` | începe cu |
 | `retension~` | acceptă greșeli de scriere (sau bifează „Tolerează greșeli”) |
-| `type:bug status:open module:Invoice release:R-2026.4 tag:auditor` | filtre pe câmpuri |
+| `type:bug status:open module:Invoice release:V8.3 tag:auditor` | filtre pe câmpuri |
 | `updated>2026-09-01` | modificat după dată (și `<`, `>=`, `<=`, `created`) |
 
 ## Setări și administrare
 
 - **Setări**: limba implicită (EN/DE/RO), temă, nume aplicație, **logo propriu** (apare în meniu, tab și tray), **pornire cu Windows**, pornire direct în tray, backup la pornire, **acces din rețea pentru telefon**, tiparul codurilor de funcție, pragul de potrivire, cuvintele de umplutură, promptul AI, culorile timeline-ului, nivelul și păstrarea log-ului, contul meu.
-- **Administrare** (doar admin): utilizatori, roluri (doar citire / editor / administrator), pagini permise per utilizator, autentificare obligatorie, backup-uri și restaurare, audit, oprirea aplicației.
+- **Administrare** (doar admin): **Pagini** (ascunde paginile nefolosite și redenumește-le în meniu; datele rămân), utilizatori, roluri (doar citire / editor / administrator), pagini permise per utilizator, autentificare obligatorie, backup-uri și restaurare, audit, oprirea aplicației.
 - **Log**: tot ce face aplicația (autentificări, importuri, modificări, erori), fișiere zilnice în folderul de date, cu filtru pe nivel și căutare.
 
 Datele stau în `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`). Alt folder: `python regtester.py --data D:\regTester`.
@@ -63,7 +65,7 @@ Dacă deschizi `web/index.html` fără server (sau pagina publicată), aplicați
 
 ```
 python -m unittest discover -s tests       # teste backend
-python tools/make_samples.py                # fișiere exemplu în sample-data/
+python tools/make_samples.py                # fișiere exemplu în sample-data/ (exporturi fictive: timeline, erori, test cases, documente)
 python tests/e2e_smoke.py                   # test complet în browser (playwright)
 ```
 

@@ -12,9 +12,9 @@ export async function render(root, ctx) {
   const tabBox = h('div'), body = h('div', { class: 'stack' });
   root.append(tabBox, body);
   const paint = () => {
-    clear(tabBox).appendChild(tabs([['users', t('admin_users')], ['security', t('admin_security')], ['backups', t('admin_backups')], ['audit', t('admin_audit')]], tab, v => { tab = v; paint(); }));
+    clear(tabBox).appendChild(tabs([['users', t('admin_users')], ['pages', t('admin_pages_tab')], ['security', t('admin_security')], ['backups', t('admin_backups')], ['audit', t('admin_audit')]], tab, v => { tab = v; paint(); }));
     clear(body);
-    ({ users, security, backups, audit })[tab]();
+    ({ users, pages, security, backups, audit })[tab]();
   };
 
   // -------------------------------------------------------------- users
@@ -25,7 +25,7 @@ export async function render(root, ctx) {
       h('thead', null, h('tr', null, [t('username'), t('admin_display'), t('admin_role'), t('admin_pages'), t('admin_state'), t('admin_last_login'), ''].map(x => h('th', null, x)))),
       h('tbody', null, list.map(u => h('tr', null,
         h('td', { class: 'mono' }, u.username), h('td', null, u.display), h('td', null, chip(t('role_' + u.role), u.role === 'admin' ? 'info' : '')),
-        h('td', { class: 'small' }, u.role === 'admin' || (u.sections || []).includes('*') ? t('admin_all_pages') : (u.sections || []).map(p => t('nav_' + p)).join(', ')),
+        h('td', { class: 'small' }, u.role === 'admin' || (u.sections || []).includes('*') ? t('admin_all_pages') : (u.sections || []).map(p => ctx.pageLabel(p)).join(', ')),
         h('td', null, u.active ? chip(t('admin_active'), 'ok') : chip(t('admin_disabled'), 'bad'), u.must_change ? chip(t('admin_must_change'), 'warn') : null),
         h('td', { class: 'nowrap small' }, u.last_login ? fmtDateTime(u.last_login) : '—'),
         h('td', { class: 'nowrap' }, btn(t('edit'), () => editUser(u), { cls: 'sm' }),
@@ -54,7 +54,7 @@ export async function render(root, ctx) {
         h('p', { class: 'hint', style: { margin: 0 } }, t('admin_roles_hint')),
         h('h3', null, t('admin_pages')),
         h('label', { class: 'check', for: 'u-all' }, allBox, t('admin_all_pages')),
-        h('div', { class: 'grid-form' }, PAGES.map((p, i) => h('label', { class: 'check', for: 'u-p-' + p }, boxes[i], t('nav_' + p)))),
+        h('div', { class: 'grid-form' }, PAGES.map((p, i) => h('label', { class: 'check', for: 'u-p-' + p }, boxes[i], ctx.pageLabel(p)))),
         h('label', { class: 'check', for: 'u-active' }, active, t('admin_active')),
         isNew || pw.value ? null : h('p', { class: 'hint', style: { margin: 0 } }, t('admin_pw_note'))],
       footer: c => [btn(t('cancel'), c), btn(t('save'), async () => {
@@ -67,6 +67,29 @@ export async function render(root, ctx) {
         } catch (e) { toast(e.message, 'bad'); }
       }, { cls: 'primary' })],
     });
+  }
+
+  // -------------------------------------------------------------- pages
+  async function pages() {
+    const s = await ctx.api.settings();
+    const hidden = new Set(s.hidden_pages || []);
+    const labels = { ...(s.page_labels || {}) };
+    const rows = ['dashboard', ...PAGES].map(p => {
+      const show = h('input', { type: 'checkbox', id: 'pg-' + p, checked: !hidden.has(p), disabled: p === 'dashboard' });
+      const name = h('input', { type: 'text', id: 'pg-n-' + p, value: labels[p] || '', placeholder: t('nav_' + p), 'aria-label': t('admin_page_label') + ' ' + t('nav_' + p) });
+      return { p, show, name, el: h('tr', null, h('td', null, h('label', { class: 'check', for: 'pg-' + p }, show, t('nav_' + p))), h('td', null, name)) };
+    });
+    body.appendChild(h('section', { class: 'card stack' }, h('h2', null, t('admin_pages_tab')),
+      h('p', { class: 'hint', style: { margin: 0 } }, t('admin_pages_hint')),
+      h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+        h('thead', null, h('tr', null, h('th', null, t('admin_page_visible')), h('th', null, t('admin_page_label')))),
+        h('tbody', null, rows.map(r => r.el)))),
+      h('div', null, btn(t('save'), async () => {
+        const hp = rows.filter(r => !r.show.checked).map(r => r.p);
+        const pl = Object.fromEntries(rows.filter(r => r.name.value.trim()).map(r => [r.p, r.name.value.trim()]));
+        try { await ctx.api.saveSettings({ hidden_pages: hp, page_labels: pl }); await ctx.reloadSettings(); toast(t('saved')); ctx.rebuildShell(); }
+        catch (e) { toast(e.message, 'bad'); }
+      }, { cls: 'primary' }))));
   }
 
   // ----------------------------------------------------------- security

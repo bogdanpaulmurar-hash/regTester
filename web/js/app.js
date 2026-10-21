@@ -2,6 +2,7 @@
 import { connect } from './api.js';
 import { setLang, t } from './i18n.js';
 import { btn, clear, h, icon, modal, store, toast } from './util.js';
+import { UI_VERSION } from './version.js';
 
 const PAGES = [
   ['dashboard', 'home', () => import('./views/dashboard.js')],
@@ -68,7 +69,8 @@ function shell() {
   const link = ([id, ic]) => h('a', { href: '#' + id, 'data-page': id, onclick: () => closeNav() }, icon(ic), ctx.pageLabel(id));
   navEl = h('nav', { class: 'nav', 'aria-label': t('nav_main') },
     h('div', { class: 'brand' }, h('img', { src: ctx.api.logoUrl(), alt: '' }),
-      h('div', null, h('b', null, ctx.settings.app_name || 'regTester'), h('small', null, ctx.api.demo ? t('demo_short') : t('tagline')))),
+      h('div', null, h('b', null, ctx.settings.app_name || 'regTester'), h('small', null, ctx.api.demo ? t('demo_short') : t('tagline')),
+        h('small', { class: 'mono', title: 'regTester', style: { opacity: .7 } }, `v${UI_VERSION}` + (ctx.api.serverVersion && ctx.api.serverVersion !== UI_VERSION ? ` · server v${ctx.api.serverVersion} ⚠` : '')))),
     PAGES.filter(([id]) => ctx.canPage(id)).map(link),
     h('div', { class: 'nav-group' }, t('nav_system')),
     SYSTEM.filter(([id]) => ctx.canPage(id)).map(link),

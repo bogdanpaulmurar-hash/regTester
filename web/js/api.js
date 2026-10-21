@@ -67,7 +67,7 @@ export async function connect() {
     const res = await fetch('/api/health', { signal: ctl.signal, cache: 'no-store' });
     clearTimeout(timer);
     const j = res.ok ? await res.json() : null;
-    if (j && j.app === 'regTester') return new RemoteApi();
+    if (j && j.app === 'regTester') { const api = new RemoteApi(); api.serverVersion = j.version || ''; return api; }
   } catch { /* no server: fall through to demo */ }
   return new DemoApi();
 }

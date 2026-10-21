@@ -192,7 +192,7 @@ def make_handler(ctx: AppContext):
             ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
             if ctype.startswith("text/") or ctype.endswith(("javascript", "json", "manifest+json")):
                 ctype += "; charset=utf-8"
-            cache = "no-cache" if target.name in ("index.html", "sw.js") else "max-age=300"
+            cache = "no-cache"
             self._send(200, target.read_bytes(), ctype, {"Cache-Control": cache})
 
         # --------------------------------------------------------------- API

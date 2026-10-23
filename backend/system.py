@@ -136,14 +136,23 @@ def list_backups(backup_dir: Path) -> list[dict]:
             for p in sorted(backup_dir.glob("regtester-*.db"), reverse=True)]
 
 
-def restore_backup(name: str, db_path: Path, backup_dir: Path) -> None:
+def backup_path(name: str, backup_dir: Path) -> Path:
+    """A backup file by name, refusing anything outside the backup folder."""
     src = (backup_dir / name).resolve()
-    if src.parent != backup_dir.resolve() or not src.exists():
-        raise FileNotFoundError(name)
-    shutil.copy2(src, db_path)
+    if src.parent != backup_dir.resolve() or not src.is_file() or not src.name.startswith("regtester-"):
+        raise KeyError(name)
+    return src
+
+
+def restore_backup(name: str, db_path: Path, backup_dir: Path) -> None:
+    shutil.copy2(backup_path(name, backup_dir), db_path)
 
 
 # ------------------------------------------------------------------ network
+def lan_host() -> str:
+    return socket.gethostname() or "computer"
+
+
 def lan_addresses() -> list[str]:
     ips = set()
     try:

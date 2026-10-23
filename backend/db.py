@@ -1,8 +1,11 @@
 """SQLite storage for regTester.
 
-Everything the app keeps lives in one file (regtester.db) in the data folder:
-records of every section, their full change history, imports, users,
-sessions and settings. Only the Python standard library is used.
+Everything the app keeps lives in one file (regtester.db): records of every
+section, their full change history, imports, users, sessions and settings.
+By default the file is in the local data folder; with a shared folder the
+common data lives there instead (see shared.py) and this machine keeps only
+its sessions and machine settings locally. Only the Python standard library
+is used.
 """
 from __future__ import annotations
 
@@ -39,6 +42,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "port": 8765,
     "lan_access": False,
     "require_login": True,
+    # sign out after this many minutes without activity
+    "session_idle_minutes": 30,
+    # folder on a Windows network share with the common database; empty = data only on this computer
+    "shared_path": "",
     # single sign-on, prepared for Microsoft Entra ID; the sign-in flow itself comes later
     "sso": {"provider": "entra", "tenant_id": "", "client_id": "", "enabled": False},
     "autostart": False,
@@ -71,6 +78,18 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 
 ROLES = ("admin", "editor", "viewer")
 
+# Settings that belong to one computer. With a shared folder they stay in the local database.
+LOCAL_KEYS = frozenset({"port", "lan_access", "autostart", "start_minimized", "open_browser_on_start",
+                        "log_level", "log_retention_days", "shared_path"})
+
+
+class ReadOnlyError(Exception):
+    """The data is open read-only (shared folder unreachable, working on the local copy)."""
+
+
+class BusyError(Exception):
+    """Another computer kept the shared folder locked for too long."""
+
 
 def now() -> float:
     return time.time()
@@ -81,26 +100,50 @@ def new_id() -> str:
 
 
 class Database:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, readonly: bool = False):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.readonly = readonly
         self._lock = threading.RLock()
-        self._conn = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        self._migrate()
+        if not readonly:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = self._connect(self.path, readonly)
+        if not readonly:
+            self._migrate()
+
+    @staticmethod
+    def _connect(path: Path, readonly: bool, journal: str = "WAL") -> sqlite3.Connection:
+        if readonly:
+            conn = sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True,
+                                   check_same_thread=False, isolation_level=None)
+        else:
+            conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None, timeout=15)
+            conn.execute(f"PRAGMA journal_mode={journal}")
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=15000")
+        return conn
 
     # ------------------------------------------------------------------ infra
     @contextmanager
-    def tx(self):
+    def write_guard(self, user: str = ""):
+        """Held around every write. The shared database adds the lock file of the shared folder."""
+        if self.readonly:
+            raise ReadOnlyError("read only")
         with self._lock:
-            self._conn.execute("BEGIN")
+            yield
+
+    @contextmanager
+    def tx(self, user: str = ""):
+        with self.write_guard(user):
+            self._conn.execute("BEGIN IMMEDIATE")
             try:
                 yield self._conn
                 self._conn.execute("COMMIT")
             except Exception:
-                self._conn.execute("ROLLBACK")
+                try:
+                    self._conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
                 raise
 
     def q(self, sql: str, args: Iterable = ()) -> list[sqlite3.Row]:
@@ -111,8 +154,28 @@ class Database:
         with self._lock:
             self._conn.close()
 
+    def restore_from_file(self, src_path: Path, user: str) -> None:
+        """Replace the whole content with a backup file, in place (other connections stay valid)."""
+        src = sqlite3.connect(f"{Path(src_path).resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            with self.write_guard(user):
+                src.backup(self._conn)
+        finally:
+            src.close()
+        self._migrate()
+        with self.tx(user) as c:
+            c.execute(
+                "INSERT INTO history(ts,user,section,record_id,action,summary) VALUES(?,?,?,?,?,?)",
+                (now(), user, "admin", Path(src_path).name, "backup-restore", Path(src_path).name),
+            )
+
+    def data_stamp(self) -> dict[str, Any]:
+        """Newest history entry: lets open pages notice changes saved from another computer."""
+        rows = self.q("SELECT id, ts, user FROM history ORDER BY id DESC LIMIT 1")
+        return dict(rows[0]) if rows else {"id": 0, "ts": None, "user": None}
+
     def _migrate(self):
-        with self._lock:
+        with self.write_guard("migrate"):
             c = self._conn
             c.executescript(
                 """
@@ -176,7 +239,7 @@ class Database:
         changed = {k: v for k, v in values.items() if k in DEFAULT_SETTINGS and before.get(k) != v}
         if not changed:
             return before
-        with self.tx() as c:
+        with self.tx(user) as c:
             for k, v in changed.items():
                 c.execute("INSERT OR REPLACE INTO settings VALUES(?, ?)", (k, json.dumps(v)))
             c.execute(
@@ -238,24 +301,26 @@ class Database:
 
     def create(self, section: str, rec: dict[str, Any], user: str) -> dict[str, Any]:
         self._check_section(section)
-        with self.tx() as c:
+        with self.tx(user) as c:
             created = self._insert(c, section, rec, user, None)
         return self.get_record(created["id"])  # type: ignore[return-value]
 
     def update(self, rid: str, rec: dict[str, Any], user: str, expected_version: int | None = None) -> dict[str, Any]:
-        current = self.get_record(rid)
-        if not current:
-            raise KeyError(rid)
-        if expected_version is not None and int(expected_version) != current["version"]:
-            raise ConflictError(current)
-        merged = {**{k: current[k] for k in ("kind", "key", "title", "body", "data", "tags")}, **rec}
-        clean = self._clean(merged)
-        before = {k: current[k] for k in ("kind", "key", "title", "body", "data", "tags")}
-        if clean == before:
-            return current
-        changed = [k for k in clean if clean[k] != before[k]]
-        ts = now()
-        with self.tx() as c:
+        with self.tx(user) as c:
+            # read inside the write transaction: another computer may have saved a moment ago
+            rows = c.execute("SELECT * FROM records WHERE id=?", (rid,)).fetchall()
+            if not rows:
+                raise KeyError(rid)
+            current = self.row_to_record(rows[0])
+            if expected_version is not None and int(expected_version) != current["version"]:
+                raise ConflictError(current)
+            merged = {**{k: current[k] for k in ("kind", "key", "title", "body", "data", "tags")}, **rec}
+            clean = self._clean(merged)
+            before = {k: current[k] for k in ("kind", "key", "title", "body", "data", "tags")}
+            if clean == before:
+                return current
+            changed = [k for k in clean if clean[k] != before[k]]
+            ts = now()
             c.execute(
                 "UPDATE records SET kind=?,key=?,title=?,body=?,data=?,tags=?,version=version+1,updated_at=?,updated_by=? WHERE id=?",
                 (clean["kind"], clean["key"], clean["title"], clean["body"],
@@ -273,7 +338,7 @@ class Database:
         current = self.get_record(rid)
         if not current:
             raise KeyError(rid)
-        with self.tx() as c:
+        with self.tx(user) as c:
             c.execute("UPDATE records SET deleted=1, updated_at=?, updated_by=? WHERE id=?", (now(), user, rid))
             c.execute(
                 "INSERT INTO history(ts,user,section,record_id,action,summary,before,after) VALUES(?,?,?,?,?,?,?,?)",
@@ -293,7 +358,7 @@ class Database:
         rid = h["record_id"]
         exists = self.q("SELECT deleted FROM records WHERE id=?", (rid,))
         if exists and exists[0]["deleted"]:
-            with self.tx() as c:
+            with self.tx(user) as c:
                 c.execute("UPDATE records SET deleted=0 WHERE id=?", (rid,))
                 c.execute(
                     "INSERT INTO history(ts,user,section,record_id,action,summary,before,after) VALUES(?,?,?,?,?,?,?,?)",
@@ -310,7 +375,7 @@ class Database:
         import_id = new_id()
         created = updated = removed = 0
         ts = now()
-        with self.tx() as c:
+        with self.tx(user) as c:
             if mode == "replace":
                 for r in c.execute("SELECT * FROM records WHERE section=? AND deleted=0", (section,)).fetchall():
                     c.execute("UPDATE records SET deleted=1, updated_at=?, updated_by=? WHERE id=?", (ts, user, r["id"]))

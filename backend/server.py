@@ -17,7 +17,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from . import __version__, system
 from .auth import Auth
-from .db import SECTIONS, ConflictError, Database
+from .db import SECTIONS, BusyError, ConflictError, Database, ReadOnlyError
+from .shared import SharedDatabase, SharedUnavailable, check_folder, create_shared
 
 LOG = logging.getLogger("regtester.server")
 MAX_BODY = 60 * 1024 * 1024
@@ -47,16 +48,24 @@ def _must(value, key):
 
 
 class AppContext:
-    """Shared state for request handlers."""
+    """Shared state for request handlers.
+
+    `local` is the database in this computer's data folder: sessions and machine settings, and all
+    data when no shared folder is set. `db` is where the data lives: `local`, or the shared database.
+    """
 
     def __init__(self, data_dir: Path, web_dir: Path):
         self.data_dir = data_dir
         self.web_dir = web_dir
-        self.db_path = data_dir / "regtester.db"
-        self.backup_dir = data_dir / "backups"
+        self.local_path = data_dir / "regtester.db"
+        self.local_backup_dir = data_dir / "backups"
         self.log_dir = data_dir / "logs"
-        self.db = Database(self.db_path)
-        self.auth = Auth(self.db)
+        self.local = Database(self.local_path)
+        self.switch_lock = threading.RLock()
+        self.shared_error = ""
+        self.db: Database = self.local
+        self._open_data()
+        self.auth = Auth(self.db, self.local)
         settings = self.db.get_settings()
         self.log_file = system.setup_logging(self.log_dir, settings["log_level"], settings["log_retention_days"])
         self.started = time.time()
@@ -64,6 +73,155 @@ class AppContext:
         self.on_quit: Callable[[], None] | None = None
         self.bound_host = "127.0.0.1"
         self.bound_port = settings["port"]
+
+    # ------------------------------------------------------------ data location
+    def _open_data(self) -> None:
+        """Open the shared folder from the machine settings, or fall back as well as possible."""
+        path = str(self.local.get_settings().get("shared_path") or "")
+        self.shared_error = ""
+        if not path:
+            self.db = self.local
+            return
+        try:
+            self.db = SharedDatabase(Path(path), self.local)
+        except SharedUnavailable as exc:
+            # never connected from here, so no copy yet: show this computer's data, read-only
+            self.shared_error = str(exc)
+            LOG.error("Shared folder %s not reachable and no local copy: %s", path, exc)
+            self.db = Database(self.local_path, readonly=True)
+
+    @property
+    def shared(self) -> SharedDatabase | None:
+        return self.db if isinstance(self.db, SharedDatabase) else None
+
+    @property
+    def db_path(self) -> Path:
+        return self.shared.path if self.shared else self.local_path
+
+    @property
+    def backup_dir(self) -> Path:
+        return self.shared.folder / "backups" if self.shared else self.local_backup_dir
+
+    def shared_status(self, admin: bool = False) -> dict[str, Any]:
+        if self.shared:
+            st = self.shared.status()
+            if admin:
+                st["machines"] = self.shared.presence()
+        elif self.shared_error:
+            st = {"mode": "unavailable", "path": self.local.get_settings().get("shared_path"), "online": False,
+                  "copy_ts": None, "writer": None, "error": self.shared_error}
+        else:
+            st = {"mode": "local", "online": True}
+        try:
+            st["stamp"] = self.db.data_stamp()
+        except Exception:  # noqa: BLE001
+            st["stamp"] = None
+        return st
+
+    def _swap(self, db: Database) -> None:
+        with self.switch_lock:
+            old, self.db = self.db, db
+            self.auth = Auth(db, self.local)
+            if old is not self.local and old is not db:
+                try:
+                    old.close()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    def connect_shared(self, path: str, init: str | None, user: str) -> dict[str, Any]:
+        info = check_folder(path)
+        if not info["exists"]:
+            raise ValueError("shared_not_found")
+        if not info["writable"]:
+            raise ValueError("shared_not_writable")
+        folder = Path(info["path"])
+        if not info["has_db"]:
+            if init not in ("copy", "empty"):
+                raise ValueError("shared_init_required")
+            system.backup_database(self.db_path, self.local_backup_dir, 1000)  # safety copy first
+            source = self.db if not self.db.readonly else self.local
+            create_shared(folder, source, init, user)
+        db = SharedDatabase(folder, self.local)
+        if not db.online:
+            raise ValueError(db.last_error or "shared_not_found")
+        self._swap(db)
+        self.shared_error = ""
+        self.local.set_settings({"shared_path": str(folder)}, user)
+        with db.tx(user) as c:
+            c.execute("INSERT INTO history(ts,user,section,record_id,action,summary) VALUES(?,?,?,?,?,?)",
+                      (time.time(), user, "admin", "shared", "shared-connect", f"{db.host}: {folder}"))
+        self.auth.drop_sessions()  # accounts may differ: everyone signs in again with the shared ones
+        db.report_presence([])
+        LOG.warning("%s connected this computer to the shared folder %s", user, folder)
+        return self.shared_status(True)
+
+    def disconnect_shared(self, user: str) -> None:
+        if self.shared and self.shared.online:
+            try:
+                with self.shared.tx(user) as c:
+                    c.execute("INSERT INTO history(ts,user,section,record_id,action,summary) VALUES(?,?,?,?,?,?)",
+                              (time.time(), user, "admin", "shared", "shared-disconnect", self.shared.host))
+            except (ReadOnlyError, BusyError):
+                pass
+        self.local.set_settings({"shared_path": ""}, user)
+        self._swap(self.local)
+        self.shared_error = ""
+        self.auth.drop_sessions()
+        LOG.warning("%s switched this computer back to local data", user)
+
+    def unlock_shared(self, user: str) -> dict[str, Any] | None:
+        if not self.shared:
+            raise ValueError("not connected to a shared folder")
+        held = self.shared.lock.force_release()
+        LOG.warning("%s removed the lock of the shared folder (held by %s)", user, held)
+        with self.shared.tx(user) as c:
+            c.execute("INSERT INTO history(ts,user,section,record_id,action,summary) VALUES(?,?,?,?,?,?)",
+                      (time.time(), user, "admin", "shared", "shared-unlock",
+                       f"{(held or {}).get('user') or '-'} @ {(held or {}).get('host') or '-'}"))
+        if held:
+            held.pop("token", None)
+        return held
+
+    def startup_backup(self, settings: dict[str, Any]) -> None:
+        """Local data: every start. Shared folder: the first start of the day on any computer."""
+        if not settings["backup_on_start"] or self.db.readonly:
+            return
+        if self.shared:
+            today = time.strftime("%Y%m%d")
+            if any(p.name.startswith(f"regtester-{today}") for p in self.backup_dir.glob("regtester-*.db")):
+                return
+            with self.shared.lock.held("backup"):
+                system.backup_database(self.db_path, self.backup_dir, settings["backup_keep"])
+            return
+        system.backup_database(self.db_path, self.backup_dir, settings["backup_keep"])
+
+    def start_monitor(self) -> None:
+        threading.Thread(target=self._monitor, name="shared-monitor", daemon=True).start()
+
+    def _monitor(self) -> None:
+        tick = 0
+        while True:
+            time.sleep(10)
+            tick += 10
+            try:
+                if self.shared:
+                    self.shared.check()
+                    if tick % 60 == 10:
+                        self.shared.report_presence(self.auth.active_users())
+                    if tick % 600 == 0:
+                        self.shared.refresh_copy()
+                elif self.shared_error and tick % 30 == 0:
+                    path = str(self.local.get_settings().get("shared_path") or "")
+                    if path:
+                        try:
+                            db = SharedDatabase(Path(path), self.local)
+                        except SharedUnavailable:
+                            continue
+                        self._swap(db)
+                        self.shared_error = ""
+                        LOG.info("Shared folder reachable: %s", path)
+            except Exception:  # noqa: BLE001
+                LOG.exception("Shared folder check failed")
 
     @property
     def logo_path(self) -> Path:
@@ -114,8 +272,8 @@ def make_handler(ctx: AppContext):
         def _is_local(self) -> bool:
             return self.client_address[0] in ("127.0.0.1", "::1")
 
-        def _user(self, required: bool = True) -> dict | None:
-            user = ctx.auth.user_for_token(self._token())
+        def _user(self, required: bool = True, touch: bool = True) -> dict | None:
+            user = ctx.auth.user_for_token(self._token(), touch)
             if user:
                 return user
             settings = ctx.db.get_settings()
@@ -168,6 +326,13 @@ def make_handler(ctx: AppContext):
                 self._json({"error": exc.message, **exc.extra}, exc.status)
             except ConflictError as exc:
                 self._json({"error": "conflict", "current": exc.current}, 409)
+            except ReadOnlyError:
+                self._json({"error": "read_only", "code": "read_only"}, 503)
+            except BusyError as exc:
+                LOG.warning("%s %s -> %s", method, path, exc)
+                self._json({"error": "busy", "code": "busy"}, 503)
+            except SharedUnavailable:
+                self._json({"error": "shared_unavailable", "code": "shared_unavailable"}, 503)
             except KeyError as exc:
                 self._json({"error": f"not found: {exc}"}, 404)
             except ValueError as exc:
@@ -218,12 +383,40 @@ def make_handler(ctx: AppContext):
                     ctx.auth.logout(tok)
                 self._json({"ok": True}); return
 
+            if head == "shared" and arg == "setup" and method == "POST":
+                # first start on a colleague's computer: join an existing shared folder from the login screen
+                if not self._is_local():
+                    raise ApiError(403, "only on the computer running regTester")
+                if ctx.shared:
+                    raise ApiError(400, "already connected to a shared folder")
+                path = str(self._body().get("path") or "")
+                info = check_folder(path)
+                if info["exists"] and info["writable"] and not info["has_db"]:
+                    raise ValueError("shared_no_db")
+                self._json(ctx.connect_shared(path, None, f"setup@{system.lan_host()}")); return
+
             if head == "public-settings":
                 s = ctx.db.get_settings()
-                self._json({k: s[k] for k in ("language", "theme", "app_name", "require_login")}); return
+                out = {k: s[k] for k in ("language", "theme", "app_name", "require_login")}
+                out["shared_mode"] = ctx.shared_status()["mode"]
+                self._json(out); return
 
-            user = self._user()
+            user = self._user(touch=not (head == "shared" and method == "GET"))
             assert user is not None
+
+            if head == "shared":
+                if method == "GET":
+                    self._json(ctx.shared_status(user["role"] == "admin")); return
+                self._admin(user)
+                body = self._body()
+                if arg == "check":
+                    self._json(check_folder(body.get("path", ""))); return
+                if arg == "connect":
+                    self._json(ctx.connect_shared(str(body.get("path") or ""), body.get("init"), user["username"])); return
+                if arg == "disconnect":
+                    ctx.disconnect_shared(user["username"]); self._json({"ok": True}); return
+                if arg == "unlock":
+                    self._json({"held": ctx.unlock_shared(user["username"])}); return
 
             if head == "me":
                 if method == "PUT":  # own password / display name
@@ -317,7 +510,9 @@ def make_handler(ctx: AppContext):
                     self._json(s); return
                 if method == "PUT":
                     body = self._body()
-                    sensitive = {"port", "lan_access", "require_login", "sso", "log_retention_days", "backup_keep"}
+                    body.pop("shared_path", None)  # only through /api/shared/connect
+                    sensitive = {"port", "lan_access", "require_login", "sso", "log_retention_days", "backup_keep",
+                                 "session_idle_minutes"}
                     if user["role"] != "admin" and sensitive.intersection(body):
                         raise ApiError(403, "admin only")
                     if user["role"] == "viewer":
@@ -359,6 +554,7 @@ def make_handler(ctx: AppContext):
                     "lan_urls": [f"http://{ip}:{ctx.bound_port}" for ip in system.lan_addresses()]
                     if ctx.bound_host == "0.0.0.0" else [],
                     "tray": ctx.on_logo_changed is not None,
+                    "shared": ctx.shared_status(user["role"] == "admin"),
                 }); return
 
             if head == "logo" and method == "POST":
@@ -400,18 +596,26 @@ def make_handler(ctx: AppContext):
             if head == "backups":
                 self._admin(user)
                 if method == "GET":
-                    self._json(system.list_backups(ctx.backup_dir)); return
+                    try:
+                        self._json(system.list_backups(ctx.backup_dir)); return
+                    except OSError:
+                        self._json([]); return
+                if ctx.db.readonly:
+                    raise ReadOnlyError("read only")
                 if method == "POST" and arg == "restore":
                     name = self._body().get("name", "")
+                    src = system.backup_path(name, ctx.backup_dir)
                     system.backup_database(ctx.db_path, ctx.backup_dir, 1000)  # safety copy first
-                    ctx.db.close()
-                    system.restore_backup(name, ctx.db_path, ctx.backup_dir)
-                    ctx.db.__init__(ctx.db_path)  # reopen
+                    ctx.db.restore_from_file(src, user["username"])
                     LOG.warning("%s restored backup %s", user["username"], name)
                     self._json({"ok": True}); return
                 if method == "POST":
                     s = ctx.db.get_settings()
-                    p = system.backup_database(ctx.db_path, ctx.backup_dir, s["backup_keep"])
+                    if ctx.shared:
+                        with ctx.shared.lock.held(user["username"]):
+                            p = system.backup_database(ctx.db_path, ctx.backup_dir, s["backup_keep"])
+                    else:
+                        p = system.backup_database(ctx.db_path, ctx.backup_dir, s["backup_keep"])
                     self._json({"name": p.name}); return
 
             raise ApiError(404, "unknown endpoint")
@@ -436,10 +640,15 @@ class AppServer:
     def start(self):
         self.thread = threading.Thread(target=self.httpd.serve_forever, name="http", daemon=True)
         self.thread.start()
+        self.ctx.start_monitor()
         LOG.info("regTester %s listening on %s:%s", __version__, self.ctx.bound_host, self.ctx.bound_port)
 
     def stop(self):
         self.httpd.shutdown()
         self.httpd.server_close()
-        self.ctx.db.close()
+        for db in {id(self.ctx.db): self.ctx.db, id(self.ctx.local): self.ctx.local}.values():
+            try:
+                db.close()
+            except Exception:  # noqa: BLE001
+                pass
         LOG.info("regTester stopped")

@@ -7,10 +7,9 @@ import json
 import secrets
 from typing import Any
 
-from .db import ROLES, Database, now
+from .db import ROLES, BusyError, Database, ReadOnlyError, now
 
 PBKDF2_ROUNDS = 200_000
-SESSION_IDLE_SECONDS = 12 * 3600
 
 
 def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
@@ -34,9 +33,11 @@ def public_user(row: Any) -> dict[str, Any]:
 
 
 class Auth:
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, sessions: Database | None = None):
+        """`db` holds the accounts (shared or local); `sessions` the sign-ins of this computer."""
         self.db = db
-        if not db.q("SELECT 1 FROM users LIMIT 1"):
+        self.sessions = sessions or db
+        if not db.readonly and not db.q("SELECT 1 FROM users LIMIT 1"):
             self.create_user({"username": "admin", "display": "Administrator", "role": "admin",
                               "password": "admin", "must_change": True}, actor="system")
 
@@ -61,7 +62,7 @@ class Auth:
         if len(password) < 4:
             raise ValueError("password too short")
         pw_hash, salt = hash_password(password)
-        with self.db.tx() as c:
+        with self.db.tx(actor) as c:
             c.execute(
                 "INSERT INTO users(username,display,role,sections,pw_hash,pw_salt,active,must_change,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
                 (username, data.get("display") or username, role, json.dumps(data.get("sections") or ["*"]),
@@ -101,14 +102,14 @@ class Auth:
             changed.append("password")
         if not fields:
             return user
-        with self.db.tx() as c:
+        with self.db.tx(actor) as c:
             c.execute(f"UPDATE users SET {', '.join(fields)} WHERE username=?", (*args, username))
-            if "active" in changed and not data.get("active", True):
-                c.execute("DELETE FROM sessions WHERE username=?", (username,))
             c.execute(
                 "INSERT INTO history(ts,user,section,record_id,action,summary) VALUES(?,?,?,?,?,?)",
                 (now(), actor, "admin", username, "user-update", ", ".join(changed)),
             )
+        if "active" in changed and not data.get("active", True):
+            self.drop_sessions(username)
         return self.get_user(username)  # type: ignore[return-value]
 
     def delete_user(self, username: str, actor: str) -> None:
@@ -119,13 +120,13 @@ class Auth:
             raise ValueError("last admin")
         if username == actor:
             raise ValueError("cannot delete yourself")
-        with self.db.tx() as c:
-            c.execute("DELETE FROM sessions WHERE username=?", (username,))
+        with self.db.tx(actor) as c:
             c.execute("DELETE FROM users WHERE username=?", (username,))
             c.execute(
                 "INSERT INTO history(ts,user,section,record_id,action,summary) VALUES(?,?,?,?,?,?)",
                 (now(), actor, "admin", username, "user-delete", username),
             )
+        self.drop_sessions(username)
 
     def reset_password(self, username: str, password: str, actor: str = "recovery") -> dict[str, Any]:
         """Emergency access from the machine that holds the database (console / reset-parola.bat).
@@ -142,14 +143,14 @@ class Auth:
                                         "password": password, "must_change": True}, actor=actor)
             return created
         pw_hash, salt = hash_password(str(password))
-        with self.db.tx() as c:
+        with self.db.tx(actor) as c:
             c.execute("UPDATE users SET pw_hash=?, pw_salt=?, active=1, must_change=1 WHERE username=?",
                       (pw_hash, salt, username))
-            c.execute("DELETE FROM sessions WHERE username=?", (username,))
             c.execute(
                 "INSERT INTO history(ts,user,section,record_id,action,summary) VALUES(?,?,?,?,?,?)",
                 (now(), actor, "admin", username, "password-reset", f"{username}: password reset, account active"),
             )
+        self.drop_sessions(username)
         return self.get_user(username)  # type: ignore[return-value]
 
     def _admin_count(self) -> int:
@@ -163,30 +164,56 @@ class Auth:
         if not check_password(password, rows[0]["pw_hash"], rows[0]["pw_salt"]):
             return None
         token = secrets.token_urlsafe(32)
-        with self.db.tx() as c:
+        with self.sessions.tx() as c:
             c.execute("INSERT INTO sessions VALUES(?,?,?,?)", (token, rows[0]["username"], now(), now()))
-            c.execute("UPDATE users SET last_login=? WHERE username=?", (now(), rows[0]["username"]))
+        try:
+            with self.db.tx(rows[0]["username"]) as c:
+                c.execute("UPDATE users SET last_login=? WHERE username=?", (now(), rows[0]["username"]))
+        except (ReadOnlyError, BusyError):
+            pass  # read-only on the local copy: signing in still works
         return token, public_user(self.db.q("SELECT * FROM users WHERE username=?", (rows[0]["username"],))[0])
 
     def logout(self, token: str) -> None:
-        with self.db.tx() as c:
+        with self.sessions.tx() as c:
             c.execute("DELETE FROM sessions WHERE token=?", (token,))
 
-    def user_for_token(self, token: str | None) -> dict[str, Any] | None:
+    def drop_sessions(self, username: str | None = None) -> None:
+        """End the sign-ins on this computer: of one user, or all (after switching the data folder)."""
+        with self.sessions.tx() as c:
+            if username is None:
+                c.execute("DELETE FROM sessions")
+            else:
+                c.execute("DELETE FROM sessions WHERE username=?", (username,))
+
+    def idle_seconds(self) -> float:
+        try:
+            minutes = float(self.db.get_settings().get("session_idle_minutes") or 30)
+        except (TypeError, ValueError):
+            minutes = 30
+        return max(5.0, minutes) * 60
+
+    def user_for_token(self, token: str | None, touch: bool = True) -> dict[str, Any] | None:
+        """The signed-in user. `touch=False` for background polling, which must not count as activity."""
         if not token:
             return None
-        rows = self.db.q("SELECT * FROM sessions WHERE token=?", (token,))
+        rows = self.sessions.q("SELECT * FROM sessions WHERE token=?", (token,))
         if not rows:
             return None
-        if now() - rows[0]["last_seen"] > SESSION_IDLE_SECONDS:
+        if now() - rows[0]["last_seen"] > self.idle_seconds():
             self.logout(token)
             return None
         user = self.get_user(rows[0]["username"])
         if not user or not user["active"]:
             return None
-        with self.db.tx() as c:
-            c.execute("UPDATE sessions SET last_seen=? WHERE token=?", (now(), token))
+        if touch:
+            with self.sessions.tx() as c:
+                c.execute("UPDATE sessions SET last_seen=? WHERE token=?", (now(), token))
         return user
+
+    def active_users(self) -> list[str]:
+        """Users signed in on this computer and active in the idle window."""
+        rows = self.sessions.q("SELECT DISTINCT username FROM sessions WHERE last_seen>?", (now() - self.idle_seconds(),))
+        return sorted(r["username"] for r in rows)
 
     @staticmethod
     def can(user: dict[str, Any], section: str, write: bool = False) -> bool:

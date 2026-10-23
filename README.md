@@ -56,10 +56,10 @@ Fiecare secțiune are tab-ul **Istoric**: fișierele importate și fiecare modif
 ## Setări și administrare
 
 - **Setări**: limba implicită (EN/DE/RO), temă, nume aplicație, **logo propriu** (apare în meniu, tab și tray), **pornire cu Windows**, pornire direct în tray, backup la pornire, **acces din rețea pentru telefon**, tiparul codurilor de funcție, pragul de potrivire, cuvintele de umplutură, promptul AI, culorile timeline-ului, nivelul și păstrarea log-ului, contul meu.
-- **Administrare** (doar admin): **Echipă** (acces din rețea, adresa pentru colegi, invitație gata de copiat), **Pagini** (ascunde paginile nefolosite și redenumește-le în meniu; datele rămân), utilizatori, roluri (doar citire / editor / administrator), pagini permise per utilizator, autentificare obligatorie, backup-uri și restaurare, audit, oprirea aplicației.
+- **Administrare** (doar admin): **Echipă** (folder comun în rețea, activitate și deblocare, invitație gata de copiat), **Pagini** (ascunde paginile nefolosite și redenumește-le în meniu; datele rămân), utilizatori, roluri (doar citire / editor / administrator), pagini permise per utilizator, autentificare obligatorie, backup-uri și restaurare, audit, oprirea aplicației.
 - **Log**: tot ce face aplicația (autentificări, importuri, modificări, erori), fișiere zilnice în folderul de date, cu filtru pe nivel și căutare.
 
-Datele stau în `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`). Alt folder: `python regtester.py --data D:\regTester`.
+Datele stau în `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`). Alt folder: `python regtester.py --data D:\regTester`. Cu folder comun, datele echipei stau acolo (vezi „Lucru în echipă”).
 
 ### Am uitat parola
 
@@ -72,14 +72,20 @@ Datele stau în `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`)
 
 În **Administrare › Securitate** sunt pregătite câmpurile pentru Microsoft Entra ID (tenant ID, client ID și adresa de redirect de trecut în înregistrarea aplicației). Conectarea cu Microsoft se activează într-o versiune următoare; logarea locală rămâne mereu disponibilă ca rezervă.
 
-## Telefon și echipă
+## Lucru în echipă (folder comun)
 
-- Pe același Wi-Fi/rețea: **Setări › Acces de pe telefon** › bifează „Permite acces din rețea”, repornește, deschide pe telefon adresa afișată (`http://IP-ul-PC:8765`). Pe Android/iOS poți face „Adaugă pe ecranul principal”.
-- Echipa: un singur calculator rulează regTester, ceilalți îl deschid din browser, fără instalare. Toți lucrează pe aceleași date; fiecare are cont, rol și paginile permise.
-- **Administrare › Echipă** adună pașii: pornește accesul din rețea, arată adresa de dat colegilor, duce la crearea conturilor și generează un text de invitație de copiat (parola temporară se trimite separat).
-- Colegii pot lucra doar cât timp regTester rulează pe calculatorul-server.
-- Instalarea ca aplicație (PWA) completă cere HTTPS în afara `localhost`; pe `localhost` merge direct din Edge/Chrome (iconița de instalare din bara de adrese).
-- Întreabă IT-ul înainte să deschizi portul în firewall.
+Datele echipei pot sta într-un folder dintr-un **share de rețea Windows** mereu disponibil (de ex. `\\server\regTester`). Fiecare coleg rulează regTester pe calculatorul lui și deschide aceleași date; nu e nevoie ca un anumit calculator să fie pornit și nimic nu pleacă în cloud.
+
+- **Prima conectare** (administrator): **Administrare › Echipă** › calea folderului › „Conectează”. Dacă folderul e gol, alegi „Copiază datele mele” sau „Începe gol (păstrează conturile)”. Înainte se face un backup local.
+- **Colegii**: copiază folderul aplicației, pornesc `start.bat`, apasă **„Folder comun”** pe ecranul de logare și lipesc calea. Apoi intră cu contul primit. Textul de invitație e gata de copiat în tab-ul Echipă. Alternativ: `python regtester.py --shared "\\server\regTester"`.
+- **Toți pot lucra în același timp.** Fiecare salvare ține folderul ocupat o clipă (fișierul `regtester.lock`), așa că scrierile nu se suprapun. Dacă doi oameni modifică același element, al doilea primește mesajul că a fost modificat între timp.
+- **Blocare rămasă** de la un calculator căzut: expiră singură după 30 de secunde; un administrator o poate scoate imediat din **Echipă › Activitate › Deblochează** (intră în Istoric).
+- **Folderul nu e disponibil**: aplicația trece singură în **mod citire** pe ultima copie locală și arată de la ce dată și oră e copia. Când folderul revine, se poate salva din nou.
+- **Ce rămâne pe fiecare calculator**: sesiunile de logare, log-ul, copia de rezervă și setările de mașină (port, pornire cu Windows, tray, acces din rețea, calea folderului comun).
+- **Delogare automată** după 30 de minute de inactivitate (se schimbă în Administrare › Securitate).
+- **Backup**: zilnic, în `backups\` din folderul comun, la prima pornire din zi a oricărui calculator.
+- Pe același Wi-Fi poți deschide regTester și de pe telefon: **Setări › Acces de pe telefon** › „Permite acces din rețea”, repornește, deschide adresa afișată. Întreabă IT-ul înainte să deschizi portul în firewall.
+- Nu folosi un folder OneDrive/SharePoint sincronizat: sincronizarea poate strica baza de date.
 
 ## Demo
 

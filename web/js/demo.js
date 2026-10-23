@@ -4,6 +4,7 @@ import { diffErrors, snapshot, toItem, toRecord as errorRecord } from './errors.
 import { catalogFromList, regspecRecord } from './regtool.js';
 import { fromSharePoint } from './timeline-gen.js';
 import { addDays, parseIso, uid } from './util.js';
+import { t } from './i18n.js';
 
 const KEY = 'rt.demo.v3';
 const now = () => Date.now() / 1000;
@@ -226,7 +227,7 @@ export const SAMPLE_VTT = `WEBVTT
 <v Ravi K.>and uh the reg test for this you know should check the totals per region</v>`;
 
 const DEMO_SETTINGS = {
-  language: 'ro', theme: 'auto', app_name: 'regTester', port: 8765, lan_access: false, require_login: false, autostart: false,
+  language: 'ro', theme: 'auto', app_name: 'regTester', port: 8765, lan_access: false, require_login: false, session_idle_minutes: 30, shared_path: '', autostart: false,
   start_minimized: true, open_browser_on_start: true, log_level: 'INFO', log_retention_days: 30, backup_on_start: true, backup_keep: 10,
   feature_code_regex: '\\b[A-Z]{2,5}-\\d{2,6}\\b', match_threshold: 0.5, flaky_window: 5,
   filler_words: 'uh, um, uhm, ähm, äh, hmm, basically, you know, like, so so, yeah yeah, okay okay, also also, sozusagen',
@@ -358,6 +359,12 @@ export class DemoApi {
   async setLogo(data_url) { this.s.logo = data_url; this.save(); }
   async resetLogo() { delete this.s.logo; this.save(); }
   logoUrl() { return this.s.logo || 'icons/icon-192.png'; }
+  async shared() { return { mode: 'local', online: true, stamp: null }; }
+  async sharedCheck() { throw new Error(t('team_demo')); }
+  async sharedConnect() { throw new Error(t('team_demo')); }
+  async sharedSetup() { throw new Error(t('team_demo')); }
+  async sharedDisconnect() {}
+  async sharedUnlock() { return { held: null }; }
   async users() { return structuredClone(this.users_); }
   async createUser(u) {
     if (this.users_.some(x => x.username === u.username)) throw new Error('user exists');

@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -177,8 +178,7 @@ def main():
             # PO sessions are hidden by default; show them again from Administration
             assert page.locator("nav a[data-page=transcripts]").count() == 0, "PO page should be hidden"
             page.goto(BASE + "#admin"); page.wait_for_selector(".page-head")
-            page.get_by_role("tab", name="Team").click(); page.wait_for_selector("#team-invite")
-            assert "regTester" in page.input_value("#team-invite")
+            page.get_by_role("tab", name="Team").click(); page.wait_for_selector("#team-path")
             page.get_by_role("tab", name="Pages").click(); page.wait_for_selector("#pg-transcripts")
             page.check("#pg-transcripts"); page.fill("#pg-n-transcripts", "Demo sessions")
             page.locator(".page .btn.primary").last.click(); page.wait_for_timeout(600)
@@ -235,6 +235,42 @@ def main():
             assert any(h["action"] == "import" for h in hist)
             logs = api("logs?limit=200", token)
             assert any("imported" in l["message"] for l in logs)
+
+            # shared folder: copy the data there, sign in again, survive an outage read-only
+            share = data / "share"
+            share.mkdir()
+            n_specs = len(api("records?section=specs", token))
+            page.evaluate("location.hash = 'admin'"); page.wait_for_selector(".page-head")
+            page.get_by_role("tab", name="Team").click(); page.wait_for_selector("#team-path")
+            page.fill("#team-path", str(share)); page.get_by_role("button", name="Connect").click()
+            page.get_by_role("button", name="Copy my data").click()
+            page.wait_for_selector("#login-user", timeout=8000)
+            assert page.locator("#login-shared").count() == 0
+            page.fill("#login-user", "admin"); page.fill("#login-pass", "secret1"); page.click("button[type=submit]")
+            page.wait_for_selector(".page-head", timeout=8000)
+            token = page.evaluate("JSON.parse(localStorage.getItem('rt.token'))")
+            st = api("shared", token)
+            assert st["mode"] == "shared" and (share / "regtester.db").is_file(), st
+            assert len(api("records?section=specs", token)) == n_specs
+            away = data / "share-away"
+            share.rename(away)
+            for _ in range(60):
+                if api("shared", token)["mode"] == "offline":
+                    break
+                time.sleep(0.5)
+            page.reload(); page.wait_for_selector("#shared-band .band-warn", timeout=8000)
+            assert "read-only on the local copy" in page.inner_text("#shared-band")
+            try:
+                api("records", token, "POST", {"section": "specs", "record": {"title": "x"}})
+                raise AssertionError("write accepted while read-only")
+            except urllib.error.HTTPError as exc:
+                assert exc.code == 503, exc.code
+            away.rename(share)
+            for _ in range(60):
+                if api("shared", token)["mode"] == "shared":
+                    break
+                time.sleep(0.5)
+            api("records", token, "POST", {"section": "specs", "record": {"title": "after outage"}})
 
             if args.shots:
                 args.shots.mkdir(parents=True, exist_ok=True)

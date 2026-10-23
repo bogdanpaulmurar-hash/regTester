@@ -4,6 +4,7 @@
     python regtester.py --tray     same, without opening the browser (used at Windows login)
     python regtester.py --no-tray  server only, stop with Ctrl+C
     python regtester.py --data D   keep database, logs and backups in folder D
+    python regtester.py --shared P use the common database in the network folder P ("" = local data again)
 """
 from __future__ import annotations
 
@@ -33,10 +34,18 @@ def main(argv=None) -> int:
     ap.add_argument("--tray", action="store_true", help="started at login: do not open the browser")
     ap.add_argument("--no-tray", action="store_true")
     ap.add_argument("--port", type=int, help="override the port from settings for this run")
+    ap.add_argument("--shared", metavar="FOLDER",
+                    help="use the regTester database in this network folder from now on (empty string: local data)")
     ap.add_argument("--list-users", action="store_true", help="show the user accounts and exit")
     ap.add_argument("--reset-password", metavar="USER",
                     help="set a new password for USER (creates USER as admin if missing) and exit")
     args = ap.parse_args(argv)
+
+    if args.shared is not None:
+        from backend.db import Database
+        local = Database(Path(args.data) / "regtester.db")
+        local.set_settings({"shared_path": args.shared.strip()}, "cli")
+        local.close()
 
     if args.list_users or args.reset_password:
         return recovery(args)
@@ -46,11 +55,10 @@ def main(argv=None) -> int:
     if args.port:
         ctx.db.set_settings({"port": args.port}, "cli")
     settings = ctx.db.get_settings()
-    if settings["backup_on_start"]:
-        try:
-            system.backup_database(ctx.db_path, ctx.backup_dir, settings["backup_keep"])
-        except Exception:  # noqa: BLE001
-            log.exception("Backup on start failed")
+    try:
+        ctx.startup_backup(settings)
+    except Exception:  # noqa: BLE001
+        log.exception("Backup on start failed")
 
     try:
         server = AppServer(ctx)
@@ -112,12 +120,24 @@ def recovery(args) -> int:
 
     from backend.auth import Auth
     from backend.db import Database
+    from backend.shared import SharedDatabase, SharedUnavailable
 
-    db = Database(Path(args.data) / "regtester.db")
+    local = Database(Path(args.data) / "regtester.db")
+    db = local
+    shared_path = local.get_settings().get("shared_path")
+    if shared_path:  # the accounts live in the shared folder
+        try:
+            db = SharedDatabase(Path(shared_path), local)
+        except SharedUnavailable as exc:
+            print(f"{shared_path}: {exc}")
+            return 1
+        if not db.online:
+            print(f"{shared_path}: {db.last_error}")
+            return 1
     lang = db.get_settings().get("language", "ro")
     tx = CLI_TEXT.get(lang, CLI_TEXT["en"])
     try:
-        auth = Auth(db)
+        auth = Auth(db, local)
         if args.list_users:
             users = auth.list_users()
             if not users:
@@ -147,6 +167,8 @@ def recovery(args) -> int:
         return 0
     finally:
         db.close()
+        if db is not local:
+            local.close()
 
 
 if __name__ == "__main__":

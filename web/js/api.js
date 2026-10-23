@@ -1,10 +1,19 @@
 // Data access. RemoteApi talks to the Python server; DemoApi keeps everything in the
 // browser (used when the page is opened without the server, e.g. the phone preview).
 import { DemoApi } from './demo.js';
+import { t } from './i18n.js';
 import { store } from './util.js';
 
+// server error codes with a translated explanation (err_<code> in i18n.js)
+const KNOWN = new Set(['read_only', 'busy', 'shared_unavailable', 'shared_not_found', 'shared_not_writable',
+  'shared_init_required', 'shared_no_db']);
+
 class HttpError extends Error {
-  constructor(status, body) { super(body?.error || `HTTP ${status}`); this.status = status; this.body = body; }
+  constructor(status, body) {
+    const code = body?.code || body?.error;
+    super(KNOWN.has(code) ? t('err_' + code) : (body?.error || `HTTP ${status}`));
+    this.status = status; this.body = body; this.code = code;
+  }
 }
 
 class RemoteApi {
@@ -55,6 +64,12 @@ class RemoteApi {
   createUser(u) { return this.req('POST', 'users', u); }
   updateUser(name, u) { return this.req('PUT', 'users/' + encodeURIComponent(name), u); }
   deleteUser(name) { return this.req('DELETE', 'users/' + encodeURIComponent(name)); }
+  shared() { return this.req('GET', 'shared'); }
+  sharedCheck(path) { return this.req('POST', 'shared/check', { path }); }
+  sharedConnect(path, init) { return this.req('POST', 'shared/connect', { path, init }); }
+  sharedSetup(path) { return this.req('POST', 'shared/setup', { path }); }
+  sharedDisconnect() { return this.req('POST', 'shared/disconnect', {}); }
+  sharedUnlock() { return this.req('POST', 'shared/unlock', {}); }
   backups() { return this.req('GET', 'backups'); }
   backupNow() { return this.req('POST', 'backups'); }
   restoreBackup(name) { return this.req('POST', 'backups/restore', { name }); }

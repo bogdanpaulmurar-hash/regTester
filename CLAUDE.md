@@ -6,15 +6,16 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - Pornire: `start.bat` (fără consolă, icon în tray) sau `python regtester.py --no-tray`; se deschide `http://127.0.0.1:8765`
 - Teste backend: `python -m unittest discover -s tests`
 - Test complet în browser: `python tests/e2e_smoke.py` (Playwright)
-- Acces de urgență: `reset-parola.bat` sau `python regtester.py --reset-password USER` (`--list-users`); un nume necunoscut creează un admin
+- Acces de urgență: `reset-parola.bat` sau `python regtester.py --reset-password USER` (`--list-users`); un nume necunoscut creează un admin (lucrează pe folderul comun dacă e setat)
+- Folder comun: `python regtester.py --shared "\\server\regTester"` (`""` = înapoi la date locale) sau Administrare › Echipă
 - Date exemplu: `python tools/make_samples.py` → `sample-data/`
 - Demo fără server: `web/index.html` deschis direct
-- Versiune (acum 0.3.1): `UI_VERSION` în `web/js/version.js` = `__version__` în `backend/__init__.py`. Un modul JS nou se adaugă și în lista `SHELL` din `web/sw.js` (cu `CACHE` incrementat)
+- Versiune (acum 0.4.0): `UI_VERSION` în `web/js/version.js` = `__version__` în `backend/__init__.py`. Un modul JS nou se adaugă și în lista `SHELL` din `web/sw.js` (cu `CACHE` incrementat)
 
 ## Hartă
-- `backend/`: `server.py` (HTTP/API), `db.py` (schemă, istoric, importuri), `auth.py` (utilizatori, roluri, sesiuni), `system.py` (log, autostart, backup), `tray.py`
+- `backend/`: `server.py` (HTTP/API, `AppContext` alege unde stau datele), `db.py` (schemă, istoric, importuri), `shared.py` (folder comun: fișier de blocare, copie locală, mod citire), `auth.py` (utilizatori, roluri, sesiuni), `system.py` (log, autostart, backup), `tray.py`
 - `web/`: JavaScript fără build și fără biblioteci externe; `js/parsers.js` citește Excel/Word; `js/docx-spec.js` generează/importă specificația Word (layout: header, titlu, cuprins, secțiuni H1–H3, footer); `js/i18n.js` are toate textele în EN/DE/RO
-- Date utilizator: `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`)
+- Date utilizator: `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`, `shared-copy.db`). Cu folder comun: datele în `<folder>\regtester.db`, local doar sesiunile, log-ul, copia și setările din `LOCAL_KEYS` (`db.py`)
 
 ## Reguli
 - Doar biblioteca standard Python (pystray + Pillow opționale pentru tray). Fără `.exe`, fără cloud, fără AI integrat: nicio dată a firmei nu pleacă de pe mașină.
@@ -22,6 +23,7 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - În timeline, „Zugewiesen an” pe rândurile de absență = înlocuitorul.
 - Orice text nou trece prin i18n în EN/DE/RO. Orice modificare de date intră în Istoric (cine, când, ce), cu restaurare.
 - `sample-data/` conține doar date fictive. Datele reale nu intră niciodată în repo.
+- Folder comun: orice scriere trece prin `db.tx()`/`write_guard()` (fișierul de blocare + `BEGIN IMMEDIATE`); verificarea de versiune se face în tranzacție. Fără WAL pe share. Sesiunile nu se scriu niciodată în baza comună. Polling-ul din fundal (`GET /api/shared`) nu reînnoiește sesiunea.
 - Pagina „Sesiuni PO” e ascunsă implicit (poate fi redenumită/refolosită). Exportul de rezultate al run-urilor e amânat la final.
 - Analiză + plan, apoi aprobarea utilizatorului, apoi implementare.
 - Cod și commit-uri în engleză; README și răspunsurile către utilizator în română.

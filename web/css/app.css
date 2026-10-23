@@ -85,6 +85,10 @@ code, .mono { font-family: var(--font-mono); font-size: .92em; }
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .demo-band { background: var(--warn-bg); color: var(--warn); font-size: 13px; padding-block: 8px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.band-warn { background: var(--warn-bg); color: var(--warn); }
+.band-bad { background: var(--bad-bg); color: var(--bad); }
+.band-info { background: var(--info-bg); color: var(--info); }
+.band-info .linkish { color: inherit; font-weight: 600; text-decoration: underline; }
 .page { padding-block: 26px 48px; padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px));
   display: flex; flex-direction: column; gap: 18px; max-width: 1500px; width: 100%; }
 .page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }

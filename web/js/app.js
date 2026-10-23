@@ -1,7 +1,7 @@
 // Application shell: navigation, routing, login, theme and language.
 import { connect } from './api.js';
 import { setLang, t } from './i18n.js';
-import { btn, clear, h, icon, modal, store, toast } from './util.js';
+import { btn, clear, fmtDate, h, icon, modal, store, toast } from './util.js';
 import { UI_VERSION } from './version.js';
 
 const PAGES = [
@@ -58,7 +58,7 @@ ctx.records = async (section, force) => {
 };
 ctx.invalidate = (...sections) => { for (const s of sections) delete ctx.cache[s]; };
 
-let navEl, mainEl, pageEl;
+let navEl, mainEl, pageEl, bandEl;
 
 function shell() {
   clear(app);
@@ -86,9 +86,57 @@ function shell() {
     h('button', { type: 'button', 'aria-label': t('menu'), onclick: () => { navEl.classList.add('open'); scrim.hidden = false; } }, icon('menu')),
     h('b', null, ctx.settings.app_name || 'regTester'), h('span', { id: 'topbar-page' }));
   pageEl = h('div', { class: 'page', id: 'page' });
+  bandEl = h('div', { id: 'shared-band' });
   mainEl = h('main', { class: 'main' }, topbar,
-    ctx.api.demo ? h('div', { class: 'demo-band' }, t('demo_band')) : null, pageEl);
+    ctx.api.demo ? h('div', { class: 'demo-band' }, t('demo_band')) : null, bandEl, pageEl);
+  paintBand();
   app.appendChild(h('div', { class: 'shell' }, navEl, scrim, mainEl));
+}
+
+// ------------------------------------------------------- shared folder status
+// Polled in the background (does not count as activity): read-only notice when the shared folder is
+// unreachable, and a notice when someone else saved, so open pages can be reloaded.
+let pollTimer = null, newData = null;
+const dayTime = ts => {
+  const d = new Date(ts * 1000);
+  return { date: fmtDate(ts, { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    time: d.toLocaleTimeString(t.locale(), { hour: '2-digit', minute: '2-digit' }) };
+};
+
+function paintBand() {
+  if (!bandEl) return;
+  clear(bandEl);
+  const st = ctx.shared;
+  if (st?.mode === 'offline') {
+    const when = st.copy_ts ? dayTime(st.copy_ts) : null;
+    bandEl.appendChild(h('div', { class: 'demo-band band-warn', role: 'status' },
+      when ? t('band_offline', when) : t('band_offline_nocopy')));
+  } else if (st?.mode === 'unavailable') {
+    bandEl.appendChild(h('div', { class: 'demo-band band-bad', role: 'status' }, t('band_unavailable', { path: st.path || '' })));
+  }
+  if (newData) {
+    bandEl.appendChild(h('div', { class: 'demo-band band-info', role: 'status' },
+      t('band_new_data', { user: newData.user || '?', time: dayTime(newData.ts).time }), ' ',
+      h('button', { type: 'button', class: 'linkish', id: 'band-reload', onclick: () => { newData = null; ctx.cache = {}; paintBand(); route(); } }, t('band_reload'))));
+  }
+}
+
+async function pollShared() {
+  if (!ctx.user || ctx.api.demo) return;
+  let st;
+  try { st = await ctx.api.shared(); } catch { return; }
+  const prev = ctx.shared;
+  ctx.shared = st;
+  if (prev && prev.mode === 'offline' && st.mode === 'shared') toast(t('band_back_online'), 'ok');
+  if (prev?.stamp && st.stamp && st.stamp.id > prev.stamp.id && st.stamp.user && st.stamp.user !== ctx.user.username) newData = st.stamp;
+  paintBand();
+}
+
+function startPolling() {
+  clearInterval(pollTimer);
+  ctx.shared = null; newData = null;
+  pollShared();
+  pollTimer = setInterval(pollShared, 20000);
 }
 
 let routeToken = 0;
@@ -118,6 +166,7 @@ async function route() {
 
 async function logout() {
   await ctx.api.logout();
+  clearInterval(pollTimer);
   ctx.user = null; ctx.cache = {};
   showLogin();
 }
@@ -141,7 +190,27 @@ function showLogin(message) {
     title: t('login_forgot'),
     body: t('login_forgot_text').split('\n\n').map(p => h('p', null, p)),
     footer: c => [btn(t('close'), c, { cls: 'primary' })],
-  }) }, t('login_forgot')))));
+  }) }, t('login_forgot')),
+  !ctx.api.demo && ctx.settings?.shared_mode === 'local'
+    ? h('button', { type: 'button', class: 'linkish', id: 'login-shared', onclick: joinShared }, t('login_shared')) : null)));
+}
+
+// Colleague's first start: point this computer at the team's shared folder, then sign in with the shared account.
+function joinShared() {
+  const path = h('input', { type: 'text', id: 'join-path', placeholder: '\\\\server\\regTester', autocomplete: 'off' });
+  const note = h('div');
+  modal({
+    title: t('login_shared'),
+    body: [h('p', null, t('login_shared_text')), h('label', { class: 'field', for: 'join-path' }, t('team_path'), path), note],
+    footer: c => [btn(t('cancel'), c), btn(t('team_connect'), async () => {
+      try {
+        await ctx.api.sharedSetup(path.value.trim());
+        c();
+        ctx.settings = await ctx.api.publicSettings();
+        showLogin(); toast(t('team_connected_login'), 'ok');
+      } catch (e) { clear(note).appendChild(h('div', { class: 'chip bad' }, e.message)); }
+    }, { cls: 'primary' })],
+  });
 }
 
 function forcePasswordChange() {
@@ -172,6 +241,7 @@ async function start() {
   setLang(store('lang') || ctx.settings.language);
   shell();
   route();
+  startPolling();
   if (ctx.user.must_change && !ctx.api.demo) forcePasswordChange();
   ctx.api.log('INFO', `UI opened by ${ctx.user.username} (${navigator.userAgent.slice(0, 80)})`);
 }
@@ -182,7 +252,7 @@ async function boot() {
   setLang(store('lang') || ctx.settings.language || 'ro');
   applyTheme(store('theme') || ctx.settings.theme);
   window.addEventListener('hashchange', route);
-  window.addEventListener('rt-auth', () => { if (ctx.user) { ctx.user = null; showLogin(t('session_expired')); } });
+  window.addEventListener('rt-auth', () => { if (ctx.user) { clearInterval(pollTimer); ctx.user = null; showLogin(t('session_expired')); } });
   window.addEventListener('error', e => ctx.api.log('ERROR', `${e.message} @ ${e.filename}:${e.lineno}`));
   window.addEventListener('unhandledrejection', e => ctx.api.log('ERROR', `Unhandled: ${e.reason?.message || e.reason}`));
   if (!ctx.api.demo && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

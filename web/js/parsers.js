@@ -34,14 +34,17 @@ export async function unzip(buffer) {
   }
   return {
     names: Object.keys(files),
-    async text(name) {
+    async bytes(name) {
       const f = files[name] || files[Object.keys(files).find(k => k.toLowerCase() === name.toLowerCase())];
       if (!f) return null;
       const lnlen = dv.getUint16(f.local + 26, true), lxlen = dv.getUint16(f.local + 28, true);
       const start = f.local + 30 + lnlen + lxlen;
       const data = u8.subarray(start, start + f.csize);
-      const raw = f.method === 0 ? data : await inflateRaw(data);
-      return new TextDecoder('utf-8').decode(raw);
+      return f.method === 0 ? data.slice() : inflateRaw(data);
+    },
+    async text(name) {
+      const raw = await this.bytes(name);
+      return raw === null ? null : new TextDecoder('utf-8').decode(raw);
     },
   };
 }

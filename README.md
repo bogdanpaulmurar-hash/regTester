@@ -21,13 +21,24 @@ Fără tray: `python regtester.py --no-tray` (oprire cu Ctrl+C).
 | **Timeline** | Exportul listei Timeline din SharePoint (Excel/CSV, coloanele listei) | Gantt, Calendar, An, Listă; filtre pe release, mediu (MIG UAT / CORE LT / PROD), produs, tip; tab **Calitatea datelor** (date copiate din alt release, duplicate, sfârșit înainte de început, release/sprint greșit); **Planifică release-ul următor** (copiază un release cu decalaj în săptămâni); export în formatul SharePoint și `.ics` |
 | **Test cases & acoperire** | Exportul de test cases din toolul de regtest (lista sau arborele de categorii), release notes | Catalog pe categorii, aplicație, calitate, utilizări; matrice funcție nouă × document RegTest × test case × specificație × procedură, cu erorile deschise |
 | **Erori & run-uri** | Exportul Error Management (Excel), opțional rezultatele unui run | Erorile cu status, run-uri, responsabili; ce s-a schimbat față de exportul anterior (noi, status schimbat, mai multe run-uri, dispărute); erori apărute în fereastra de regtest; istoric pe fiecare eroare; raport de copiat |
-| **Documentație** | Formular, sau document Word existent | Document în ordinea și stilul șablonului, copiere pentru OneNote / toolul de regtest, `.html`, `.md` |
+| **Documentație** | Formularul **Specificație Word** (sau o specificație `.docx` existentă), ori formularul simplu pe șablon | Specificație de regression test `.docx`: header, pagină de titlu, cuprins, secțiuni pe 3 niveluri cu text formatat și screenshoturi, footer cu „pagina X din Y”; documente salvate în aplicație, descărcabile oricând; formularul simplu dă copiere pentru OneNote, `.html`, `.md` |
 | **Specificații** | Exportul Document Management (documente RegTest), exporturi bug tracker, Word/HTML | Bază unică pentru documente RegTest, specificații, bug-uri, proceduri; căutare avansată |
 | **Sesiuni PO** (ascunsă implicit) | Transcriere Teams (`.vtt`, `.docx`, text) | Text curățat, funcții recunoscute, rezumat salvat |
 
 Exporturile se citesc așa cum ies din tool: rândul de titlu de deasupra antetului e sărit, coloanele sunt recunoscute după nume sau după conținut (de ex. exportul de test cases are antetul decalat cu o coloană), iar datele `dd.mm.yyyy` și `M/D/YYYY` sunt detectate automat.
 
 Fiecare secțiune are tab-ul **Istoric**: fișierele importate și fiecare modificare (cine, când, ce câmp), cu comparare înainte/după și **restaurare**.
+
+### Specificație Word
+
+**Documentație › Specificație Word** construiește documentul în formatul specificațiilor de regression test:
+
+- **Pagina de titlu, header și footer**: titlu, user story, cale, titlul pachetului RegTest, produs, nume, departament, dată, clasificare și limba documentului (DE/EN/RO).
+- **Secțiuni**: titluri editabile, nivel 1–3, „pagină nouă”, mutare sus/jos, adăugare/ștergere. Fiecare secțiune are editor cu aldin, cursiv, subliniat, text roșu, liste și screenshoturi (Ctrl+V, drag & drop sau buton); click pe imagine pentru lățime.
+- **Generează Word (.docx)**: descarcă fișierul. Cuprinsul și numerele de pagină le completează Word la deschidere.
+- **Importă Word (.docx)**: încarcă o specificație existentă (titluri, text, liste, tabele, imagini) ca s-o editezi.
+- **Folosește această structură la documente noi**: păstrează produsul, departamentul, calea și titlurile secțiunilor ca punct de plecare.
+- Documentele salvate apar în **Documente**, cu versiuni și restaurare în **Istoric**; oricine are acces la pagină (de ex. developerul) le poate descărca ca `.docx`.
 
 ### Căutare în specificații
 

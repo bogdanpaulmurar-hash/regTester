@@ -1,7 +1,9 @@
 // Documentation generator: fixed templates give every document the same order and style.
 import { DEFAULT_TEMPLATE } from '../demo.js';
+import { buildSpecDocx, countImages, defaultSections, importSpecDocx, newSpec, SPEC_FORMAT, specFileName, specText, structureOf } from '../docx-spec.js';
 import { historyTab } from '../history-view.js';
-import { t } from '../i18n.js';
+import { LANGS, t, tIn } from '../i18n.js';
+import { richText } from '../richtext.js';
 import { pickFile } from '../importer.js';
 import { btn, chip, clear, confirmBox, copyText, download, emptyState, esc, fmtDateTime, h, normalize, similarity, store, tabs, toast } from '../util.js';
 
@@ -22,22 +24,24 @@ const HINTS = {
 };
 
 export async function render(root, ctx) {
-  const st = Object.assign({ tab: 'write' }, store('docs') || {});
+  const st = Object.assign({ tab: 'spec' }, store('docs') || {});
   const save = () => store('docs', st);
   const canWrite = ctx.canWriteSection('docs');
-  let templates = [], docs = [];
-  let work = null;
+  let templates = [], docs = [], specBase = null;
+  let work = null, sw = null, swDirty = false;
 
   root.appendChild(h('div', { class: 'page-head' }, h('div', null, h('h1', null, ctx.pageLabel('docs')), h('p', null, t('docs_intro')))));
   const tabBox = h('div'), body = h('div', { class: 'stack' });
   root.append(tabBox, body);
 
   async function load(force) {
-    templates = await ctx.records('templates', force);
-    if (!templates.length && ctx.canWriteSection('templates')) {
+    let all = await ctx.records('templates', force);
+    if (!all.some(x => x.kind !== 'regspec') && ctx.canWriteSection('templates')) {
       await ctx.api.create('templates', localizedDefault());
-      templates = await ctx.records('templates', true);
+      all = await ctx.records('templates', true);
     }
+    templates = all.filter(x => x.kind !== 'regspec');
+    specBase = all.find(x => x.kind === 'regspec') || null;
     docs = await ctx.records('docs', force);
     if (!work) newWork();
     if (ctx.api.demo && !work.id && !work.meta.title && docs[0]) openDoc(docs[0]);
@@ -52,12 +56,13 @@ export async function render(root, ctx) {
   }
 
   function paint() {
-    clear(tabBox).appendChild(tabs([['write', t('docs_t_write')], ['list', `${t('docs_t_list')} · ${docs.length}`], ['templates', t('docs_t_templates')], ['history', t('tab_history')]],
+    clear(tabBox).appendChild(tabs([['spec', t('docs_t_spec')], ['write', t('docs_t_write')], ['list', `${t('docs_t_list')} · ${docs.length}`], ['templates', t('docs_t_templates')], ['history', t('tab_history')]],
       st.tab, v => { st.tab = v; save(); paint(); }));
     clear(body);
     if (st.tab === 'history') historyTab(body, ctx, ['docs', 'templates'], () => load(true));
     else if (st.tab === 'list') docList();
     else if (st.tab === 'templates') templateList();
+    else if (st.tab === 'spec') specView();
     else writeView();
   }
 
@@ -211,11 +216,186 @@ export async function render(root, ctx) {
   // ------------------------------------------------------------- list
   function docList() {
     if (!docs.length) { body.appendChild(emptyState(t('docs_none'))); return; }
-    body.appendChild(h('div', { class: 'card list' }, docs.slice().sort((a, b) => b.updated_at - a.updated_at).map(d => h('div', { class: 'li' },
+    body.appendChild(h('div', { class: 'card list' }, docs.slice().sort((a, b) => b.updated_at - a.updated_at).map(d => d.data?.format === SPEC_FORMAT ? specListItem(d) : h('div', { class: 'li' },
       h('div', { class: 'grow' }, h('b', null, d.title), h('div', { class: 'small muted' }, `${[d.data?.meta?.code, d.data?.meta?.sprint, d.data?.meta?.release].filter(Boolean).join(' · ')} · ${fmtDateTime(d.updated_at)} · v${d.version}`)),
       d.data?.complete ? chip(t('docs_complete'), 'ok') : chip(t('docs_incomplete'), 'warn'),
       btn(t('open'), () => { openDoc(d); st.tab = 'write'; save(); paint(); }, { cls: 'sm' }),
       canWrite ? btn('', async () => { if (await confirmBox(t('confirm_delete', { name: d.title }), t('delete'))) { await ctx.api.remove(d.id); ctx.invalidate('docs'); load(true); } }, { cls: 'sm ghost danger icon-btn', icon: 'trash', aria: t('delete') }) : null))));
+  }
+
+  // ------------------------------------------------- word specification
+  function specListItem(d) {
+    const sp = d.data;
+    return h('div', { class: 'li' },
+      h('div', { class: 'grow' }, h('b', null, d.title), h('div', { class: 'small muted' },
+        `${[sp.story, sp.path, sp.header?.date].filter(Boolean).join(' · ')} · ${fmtDateTime(d.updated_at)} · v${d.version} · ${d.updated_by || ''}`)),
+      chip(t('spec_kind'), 'info'),
+      btn('.docx', () => downloadSpec(sp), { cls: 'sm', icon: 'download' }),
+      btn(t('open'), () => { openSpec(d); st.tab = 'spec'; save(); paint(); }, { cls: 'sm' }),
+      canWrite ? btn('', async () => { if (await confirmBox(t('confirm_delete', { name: d.title }), t('delete'))) { await ctx.api.remove(d.id); ctx.invalidate('docs'); if (sw?.id === d.id) sw = null; load(true); } }, { cls: 'sm ghost danger icon-btn', icon: 'trash', aria: t('delete') }) : null);
+  }
+
+  function freshSpec() {
+    const lang = specBase?.data?.lang || 'de';
+    sw = { id: null, version: null, spec: newSpec(lang, specBase?.data || null) };
+    swDirty = false;
+  }
+  function openSpec(d) {
+    const spec = { ...newSpec(d.data.lang || 'de'), ...structuredClone(d.data) };
+    spec.header = { product: '', name: '', department: '', date: '', ...(d.data.header || {}) };
+    sw = { id: d.id, version: d.version, spec };
+    swDirty = false;
+  }
+  async function guardDirty() {
+    return !swDirty || confirmBox(t('spec_discard_q'), t('continue'));
+  }
+
+  async function downloadSpec(spec) {
+    try {
+      const bytes = await buildSpecDocx(spec, ctx.user?.display || ctx.user?.username || '');
+      const name = specFileName(spec);
+      download(name, new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+      toast(t('spec_generated', { name }));
+      ctx.api.log('INFO', `Word specification generated: ${name}`);
+    } catch (e) { console.error(e); toast(e.message, 'bad'); }
+  }
+
+  function specView() {
+    if (!sw) freshSpec();
+    const sp = sw.spec;
+    const mark = () => { swDirty = true; dirtyChip.hidden = false; };
+    const dirtyChip = chip(t('spec_unsaved'), 'warn'); dirtyChip.hidden = !swDirty;
+    const input = (id, label, get, set, extra = {}) => {
+      const el = h('input', { type: 'text', id: 'sp-' + id, value: get() || '', disabled: !canWrite, ...extra });
+      el.addEventListener('input', () => { set(el.value); mark(); if (id === 'title' || id === 'story') syncHead(); });
+      return h('label', { class: 'field', for: 'sp-' + id }, label, el, extra.hint ? h('span', { class: 'hint' }, extra.hint) : null);
+    };
+    const langSel = h('select', { id: 'sp-lang', disabled: !canWrite, onchange: () => {
+      const old = sp.lang, nl = langSel.value;
+      // titles still equal to the defaults of the old language follow the new language
+      const oldDef = defaultSections(old).map(x => x.title), newDef = defaultSections(nl).map(x => x.title);
+      sp.sections.forEach(s => { const i = oldDef.indexOf(s.title); if (i >= 0) s.title = newDef[i]; });
+      if (sp.classification === tIn(old, 'dx_class')) sp.classification = tIn(nl, 'dx_class');
+      sp.lang = nl; mark(); paint();
+    } }, LANGS.map(l => h('option', { value: l, selected: sp.lang === l }, ({ de: 'Deutsch', en: 'English', ro: 'Română' })[l] || l)));
+
+    const head = h('div', { class: 'toolbar' });
+    function syncHead() {
+      clear(head).append(
+        h('div', { class: 'grow' }, h('b', null, sp.title || t('spec_untitled')), sp.story ? h('span', { class: 'muted' }, ' · ' + sp.story) : null,
+          sw.id ? h('span', { class: 'small muted' }, ` · v${sw.version}`) : null),
+        dirtyChip);
+    }
+    syncHead();
+
+    const actions = h('div', { class: 'toolbar' },
+      canWrite ? btn(t('spec_new'), async () => { if (await guardDirty()) { freshSpec(); paint(); } }, { icon: 'plus', cls: 'sm' }) : null,
+      canWrite ? btn(t('spec_import'), importSpec, { icon: 'upload', cls: 'sm' }) : null,
+      h('span', { class: 'sp' }),
+      ctx.canWriteSection('templates') ? btn(t('spec_save_default'), saveSpecDefault, { cls: 'sm ghost' }) : null,
+      btn(t('spec_docx'), () => downloadSpec(sp), { icon: 'download', cls: 'sm' }),
+      canWrite ? btn(sw.id ? t('trs_update') : t('save'), saveSpec, { icon: 'doc', cls: 'primary sm' }) : null);
+
+    const cover = h('details', { class: 'card stack', open: !sw.id },
+      h('summary', null, h('b', null, t('spec_cover'))),
+      h('div', { class: 'grid-form' },
+        input('title', t('spec_title') + ' *', () => sp.title, v => { sp.title = v; }, { hint: t('spec_hint_title') }),
+        input('story', t('spec_story'), () => sp.story, v => { sp.story = v; }, { placeholder: 'US-0000' }),
+        input('path', t('spec_path'), () => sp.path, v => { sp.path = v; }),
+        input('package', t('spec_package'), () => sp.package, v => { sp.package = v; }, { placeholder: t('spec_package_same') }),
+        input('product', t('spec_product'), () => sp.header.product, v => { sp.header.product = v; }),
+        input('name', t('spec_name'), () => sp.header.name, v => { sp.header.name = v; }, { placeholder: tIn(sp.lang, 'dx_name') }),
+        input('department', t('spec_department'), () => sp.header.department, v => { sp.header.department = v; }, { placeholder: tIn(sp.lang, 'dx_department') }),
+        input('date', t('spec_date'), () => sp.header.date, v => { sp.header.date = v; }, { placeholder: 'dd.mm.yyyy' }),
+        input('class', t('spec_class'), () => sp.classification, v => { sp.classification = v; }),
+        h('label', { class: 'field', for: 'sp-lang' }, t('spec_doc_lang'), langSel)));
+
+    const secBox = h('div', { class: 'stack' });
+    const paintSections = () => {
+      clear(secBox);
+      sp.sections.forEach((s, i) => {
+        const title = h('input', { type: 'text', value: s.title, disabled: !canWrite, 'aria-label': t('spec_sec_title'), class: 'spec-sec-title' });
+        title.addEventListener('input', () => { s.title = title.value; mark(); });
+        const level = h('select', { disabled: !canWrite, 'aria-label': t('spec_level'), onchange: e => { s.level = +e.target.value; mark(); paintSections(); } },
+          [1, 2, 3].map(n => h('option', { value: n, selected: s.level === n }, t('spec_level_n', { n }))));
+        const np = h('input', { type: 'checkbox', checked: s.newPage, disabled: !canWrite, onchange: e => { s.newPage = e.target.checked; mark(); } });
+        const move = d => { const j = i + d; if (j < 0 || j >= sp.sections.length) return; [sp.sections[i], sp.sections[j]] = [sp.sections[j], sp.sections[i]]; mark(); paintSections(); };
+        secBox.appendChild(h('section', { class: `card stack spec-sec lvl${s.level}` },
+          h('div', { class: 'toolbar' },
+            h('span', { class: 'mono muted' }, String(i + 1).padStart(2, '0')),
+            level, h('div', { class: 'grow' }, title),
+            h('label', { class: 'check' }, np, t('spec_newpage')),
+            canWrite ? [btn('↑', () => move(-1), { cls: 'sm ghost', aria: t('move_up') }), btn('↓', () => move(1), { cls: 'sm ghost', aria: t('move_down') }),
+              btn('+', () => { sp.sections.splice(i + 1, 0, { id: 's' + Date.now().toString(36), level: Math.min(3, s.level + (s.level < 3 ? 1 : 0)), title: '', html: '', newPage: false }); mark(); paintSections(); }, { cls: 'sm ghost', aria: t('spec_add_after'), title: t('spec_add_after') }),
+              btn('', async () => { if (await confirmBox(t('confirm_delete', { name: s.title || '#' + (i + 1) }), t('delete'))) { sp.sections.splice(i, 1); mark(); paintSections(); } }, { cls: 'sm ghost danger icon-btn', icon: 'trash', aria: t('delete') })] : null),
+          richText({ html: s.html, readOnly: !canWrite, label: s.title, onChange: v => { if (v !== s.html) { s.html = v; mark(); } } })));
+      });
+      if (canWrite) secBox.appendChild(h('div', null, btn(t('spec_add'), () => { sp.sections.push({ id: 's' + Date.now().toString(36), level: 1, title: '', html: '', newPage: true }); mark(); paintSections(); }, { icon: 'plus' })));
+    };
+    paintSections();
+
+    const preview = h('div', { class: 'doc-preview spec-preview' });
+    const prevBox = h('details', { class: 'card', ontoggle: e => { if (e.target.open) paintPreview(); } },
+      h('summary', null, h('b', null, t('spec_preview'))), h('p', { class: 'hint' }, t('spec_toc_note')), preview);
+    function paintPreview() {
+      const L = k => tIn(sp.lang, k);
+      const hd = `<div class="sp-hdr"><div><b>${esc([sp.header.product, L('dx_doctype')].filter(Boolean).join(' '))}</b><br>${esc(sp.header.name || L('dx_name'))}<br>${esc(sp.header.department || L('dx_department'))}</div><b>${esc(sp.header.date || L('dx_date'))}</b></div>`;
+      let out = `<div class="sp-page">${hd}<p class="sp-title">${esc(L('dx_title'))} ${esc(sp.title)}</p><p class="sp-label">${esc(L('dx_path'))} ${esc(sp.path)}</p><p class="sp-label">${esc(L('dx_package'))}</p><p class="sp-pkg">${esc(sp.package || sp.title)}</p></div>`;
+      out += `<div class="sp-page">${hd}<p class="sp-label">${esc(L('dx_toc'))}</p>${sp.sections.map(s => `<div class="sp-toc lvl${s.level}">${esc(s.title)}</div>`).join('')}</div>`;
+      let page = '';
+      sp.sections.forEach((s, i) => {
+        if (i === 0 || s.newPage) { if (page) out += `<div class="sp-page">${hd}${page}</div>`; page = ''; }
+        page += `<h${s.level + 1} class="sp-h">${esc(s.title)}</h${s.level + 1}>${s.html || ''}`;
+      });
+      if (page) out += `<div class="sp-page">${hd}${page}</div>`;
+      preview.innerHTML = out;
+    }
+
+    body.append(h('div', { class: 'card stack' }, head, h('p', { class: 'hint', style: { margin: 0 } }, t('spec_intro')), actions), cover,
+      h('h2', null, t('spec_sections')), secBox, prevBox);
+  }
+
+  async function saveSpec() {
+    const sp = sw.spec;
+    if (!String(sp.title || '').trim()) { toast(t('err_title_required'), 'bad'); return; }
+    if (!sp.story) sp.story = (/\b([A-Z]{2,6}-\d{2,7})\b/.exec(sp.title) || [])[1] || '';
+    const record = { kind: 'spec-doc', key: sp.story || '', title: sp.title.trim(), body: specText(sp), data: { ...structuredClone(sp), format: SPEC_FORMAT, images: countImages(sp) } };
+    try {
+      const saved = sw.id ? await ctx.api.update(sw.id, record, sw.version) : await ctx.api.create('docs', record);
+      sw.id = saved.id; sw.version = saved.version; swDirty = false;
+      ctx.invalidate('docs'); docs = await ctx.records('docs', true);
+      toast(t('saved')); paint();
+    } catch (e) { toast(e.status === 409 ? t('err_conflict') : e.message, 'bad'); }
+  }
+
+  async function saveSpecDefault() {
+    const rec = { kind: 'regspec', key: 'REGSPEC-DEFAULT', title: t('spec_kind'), data: structureOf(sw.spec) };
+    try {
+      if (specBase) await ctx.api.update(specBase.id, rec, specBase.version); else await ctx.api.create('templates', rec);
+      ctx.invalidate('templates');
+      const all = await ctx.records('templates', true);
+      specBase = all.find(x => x.kind === 'regspec') || null;
+      toast(t('spec_default_saved'));
+    } catch (e) { toast(e.status === 409 ? t('err_conflict') : e.message, 'bad'); }
+  }
+
+  function importSpec() {
+    const inp = h('input', { type: 'file', accept: '.docx', hidden: true });
+    inp.addEventListener('change', async () => {
+      const f = inp.files[0]; inp.remove(); if (!f) return;
+      if (!(await guardDirty())) return;
+      try {
+        const res = await importSpecDocx(await f.arrayBuffer(), sw?.spec?.lang || specBase?.data?.lang || 'de');
+        if (!res.spec.title) res.spec.title = f.name.replace(/\.docx$/i, '');
+        sw = { id: null, version: null, spec: res.spec }; swDirty = true;
+        toast(t('spec_imported', { n: res.spec.sections.length, img: res.images }));
+        if (res.skipped) toast(t('spec_img_skipped', { n: res.skipped }), 'warn');
+        ctx.api.log('INFO', `Word specification imported: ${f.name} (${res.spec.sections.length} sections, ${res.images} images)`);
+        paint();
+      } catch (e) { console.error(e); toast(e.message, 'bad'); }
+    });
+    document.body.appendChild(inp);
+    inp.click();
   }
 
   // -------------------------------------------------------- templates

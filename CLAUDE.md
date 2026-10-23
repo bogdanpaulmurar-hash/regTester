@@ -9,11 +9,11 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - Acces de urgență: `reset-parola.bat` sau `python regtester.py --reset-password USER` (`--list-users`); un nume necunoscut creează un admin
 - Date exemplu: `python tools/make_samples.py` → `sample-data/`
 - Demo fără server: `web/index.html` deschis direct
-- Versiune (acum 0.2.0): `UI_VERSION` în `web/js/version.js` = `__version__` în `backend/__init__.py`. Un modul JS nou se adaugă și în lista `SHELL` din `web/sw.js` (cu `CACHE` incrementat)
+- Versiune (acum 0.3.0): `UI_VERSION` în `web/js/version.js` = `__version__` în `backend/__init__.py`. Un modul JS nou se adaugă și în lista `SHELL` din `web/sw.js` (cu `CACHE` incrementat)
 
 ## Hartă
 - `backend/`: `server.py` (HTTP/API), `db.py` (schemă, istoric, importuri), `auth.py` (utilizatori, roluri, sesiuni), `system.py` (log, autostart, backup), `tray.py`
-- `web/`: JavaScript fără build și fără biblioteci externe; `js/parsers.js` citește Excel/Word; `js/i18n.js` are toate textele în EN/DE/RO
+- `web/`: JavaScript fără build și fără biblioteci externe; `js/parsers.js` citește Excel/Word; `js/docx-spec.js` generează/importă specificația Word (layout: header, titlu, cuprins, secțiuni H1–H3, footer); `js/i18n.js` are toate textele în EN/DE/RO
 - Date utilizator: `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`)
 
 ## Reguli

@@ -194,11 +194,33 @@ def main():
             assert len(api("records?section=transcripts", token)) == 1
 
             # docs
-            page.goto(BASE + "#docs"); page.wait_for_selector("#doc-title")
+            page.goto(BASE + "#docs"); page.wait_for_selector("#sp-title")
+            page.get_by_role("tab", name="Write").click(); page.wait_for_selector("#doc-title")
             page.fill("#doc-title", "Filtru avansat clienți"); page.fill("#doc-code", "FN-1051")
             page.fill("#doc-s-purpose", "Filter invoices by region"); page.fill("#doc-s-steps", "Open list\nApply filter")
             page.get_by_role("button", name="Save").first.click(); page.wait_for_timeout(400)
             assert len(api("records?section=docs", token)) == 1
+
+            # Word specification: fill, save, generate .docx, import it back
+            page.get_by_role("tab", name="Word specification").click(); page.wait_for_selector("#sp-title")
+            page.fill("#sp-title", "Invoice filter by region -US-0042"); page.fill("#sp-path", "Billing › Other")
+            page.locator(".rt-area").first.click(); page.keyboard.type("Short description")
+            page.wait_for_timeout(400)
+            page.locator(".page .btn.primary").first.click(); page.wait_for_timeout(500)
+            spec_docs = [d for d in api("records?section=docs", token) if d["data"].get("format") == "regspec"]
+            assert len(spec_docs) == 1, spec_docs
+            assert "Short description" in spec_docs[0]["data"]["sections"][0]["html"], spec_docs[0]["data"]["sections"][0]
+            with page.expect_download() as dl:
+                page.get_by_role("button", name="Generate Word (.docx)").click()
+            docx = data / "spec.docx"; dl.value.save_as(str(docx))
+            assert docx.stat().st_size > 5000 and docx.read_bytes()[:2] == b"PK", docx.stat().st_size
+            page.get_by_role("button", name="New specification").click(); page.wait_for_timeout(200)
+            with page.expect_file_chooser() as fc:
+                page.get_by_role("button", name="Import Word (.docx)").click()
+            fc.value.set_files(str(docx)); page.wait_for_timeout(1200)
+            assert page.input_value("#sp-title") == "Invoice filter by region -US-0042"
+            assert page.input_value("#sp-path") == "Billing › Other"
+            assert page.locator(".spec-sec").count() == 7, page.locator(".spec-sec").count()
 
             # system pages and languages
             for lang in ["ro", "de", "en"]:

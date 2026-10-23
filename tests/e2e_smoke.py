@@ -177,6 +177,8 @@ def main():
             # PO sessions are hidden by default; show them again from Administration
             assert page.locator("nav a[data-page=transcripts]").count() == 0, "PO page should be hidden"
             page.goto(BASE + "#admin"); page.wait_for_selector(".page-head")
+            page.get_by_role("tab", name="Team").click(); page.wait_for_selector("#team-invite")
+            assert "regTester" in page.input_value("#team-invite")
             page.get_by_role("tab", name="Pages").click(); page.wait_for_selector("#pg-transcripts")
             page.check("#pg-transcripts"); page.fill("#pg-n-transcripts", "Demo sessions")
             page.locator(".page .btn.primary").last.click(); page.wait_for_timeout(600)

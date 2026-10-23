@@ -56,7 +56,7 @@ Fiecare secțiune are tab-ul **Istoric**: fișierele importate și fiecare modif
 ## Setări și administrare
 
 - **Setări**: limba implicită (EN/DE/RO), temă, nume aplicație, **logo propriu** (apare în meniu, tab și tray), **pornire cu Windows**, pornire direct în tray, backup la pornire, **acces din rețea pentru telefon**, tiparul codurilor de funcție, pragul de potrivire, cuvintele de umplutură, promptul AI, culorile timeline-ului, nivelul și păstrarea log-ului, contul meu.
-- **Administrare** (doar admin): **Pagini** (ascunde paginile nefolosite și redenumește-le în meniu; datele rămân), utilizatori, roluri (doar citire / editor / administrator), pagini permise per utilizator, autentificare obligatorie, backup-uri și restaurare, audit, oprirea aplicației.
+- **Administrare** (doar admin): **Echipă** (acces din rețea, adresa pentru colegi, invitație gata de copiat), **Pagini** (ascunde paginile nefolosite și redenumește-le în meniu; datele rămân), utilizatori, roluri (doar citire / editor / administrator), pagini permise per utilizator, autentificare obligatorie, backup-uri și restaurare, audit, oprirea aplicației.
 - **Log**: tot ce face aplicația (autentificări, importuri, modificări, erori), fișiere zilnice în folderul de date, cu filtru pe nivel și căutare.
 
 Datele stau în `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`). Alt folder: `python regtester.py --data D:\regTester`.
@@ -75,7 +75,9 @@ Datele stau în `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`)
 ## Telefon și echipă
 
 - Pe același Wi-Fi/rețea: **Setări › Acces de pe telefon** › bifează „Permite acces din rețea”, repornește, deschide pe telefon adresa afișată (`http://IP-ul-PC:8765`). Pe Android/iOS poți face „Adaugă pe ecranul principal”.
-- Echipa: un singur calculator rulează regTester, ceilalți îl deschid din browser, fără instalare. Fiecare are cont și rol.
+- Echipa: un singur calculator rulează regTester, ceilalți îl deschid din browser, fără instalare. Toți lucrează pe aceleași date; fiecare are cont, rol și paginile permise.
+- **Administrare › Echipă** adună pașii: pornește accesul din rețea, arată adresa de dat colegilor, duce la crearea conturilor și generează un text de invitație de copiat (parola temporară se trimite separat).
+- Colegii pot lucra doar cât timp regTester rulează pe calculatorul-server.
 - Instalarea ca aplicație (PWA) completă cere HTTPS în afara `localhost`; pe `localhost` merge direct din Edge/Chrome (iconița de instalare din bara de adrese).
 - Întreabă IT-ul înainte să deschizi portul în firewall.
 

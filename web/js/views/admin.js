@@ -1,7 +1,7 @@
-// Administration: user access, roles and page permissions, login policy, backups, audit, shutdown.
+// Administration: user access, team access, roles and page permissions, login policy, backups, audit, shutdown.
 import { renderHistory } from '../history-view.js';
 import { t } from '../i18n.js';
-import { btn, chip, clear, confirmBox, fmtDateTime, h, modal, tabs, toast } from '../util.js';
+import { btn, chip, clear, confirmBox, copyText, fmtDateTime, h, modal, tabs, toast } from '../util.js';
 
 const PAGES = ['timeline', 'coverage', 'triage', 'transcripts', 'docs', 'specs'];
 
@@ -12,9 +12,9 @@ export async function render(root, ctx) {
   const tabBox = h('div'), body = h('div', { class: 'stack' });
   root.append(tabBox, body);
   const paint = () => {
-    clear(tabBox).appendChild(tabs([['users', t('admin_users')], ['pages', t('admin_pages_tab')], ['security', t('admin_security')], ['backups', t('admin_backups')], ['audit', t('admin_audit')]], tab, v => { tab = v; paint(); }));
+    clear(tabBox).appendChild(tabs([['users', t('admin_users')], ['team', t('admin_team')], ['pages', t('admin_pages_tab')], ['security', t('admin_security')], ['backups', t('admin_backups')], ['audit', t('admin_audit')]], tab, v => { tab = v; paint(); }));
     clear(body);
-    ({ users, pages, security, backups, audit })[tab]();
+    ({ users, team, pages, security, backups, audit })[tab]();
   };
 
   // -------------------------------------------------------------- users
@@ -74,6 +74,42 @@ export async function render(root, ctx) {
         } catch (e) { toast(e.message, 'bad'); }
       }, { cls: 'primary' })],
     });
+  }
+
+  // --------------------------------------------------------------- team
+  // Everyone logged in on this server works on the same data; this tab helps the admin share it.
+  async function team() {
+    const [s, sys, list] = await Promise.all([ctx.api.settings(), ctx.api.system().catch(() => ({})), ctx.api.users()]);
+    const active = sys.host === '0.0.0.0';
+    const urls = sys.lan_urls || [];
+    const others = list.filter(u => u.active && u.username !== ctx.user.username).length;
+    const state = active ? chip(t('team_net_on'), 'ok') : s.lan_access ? chip(t('team_net_pending'), 'warn') : chip(t('team_net_off'), 'bad');
+    const net = h('section', { class: 'card stack' },
+      h('div', { class: 'card-head' }, h('h2', null, t('team_access')), state),
+      h('p', { class: 'hint', style: { margin: 0 } }, t('team_intro')));
+    if (ctx.api.demo) net.appendChild(h('p', { class: 'hint', style: { margin: 0 } }, t('team_demo')));
+    else if (active && urls.length) net.append(h('b', null, t('team_urls')),
+      ...urls.map(u => h('div', { class: 'toolbar' }, h('span', { class: 'mono' }, u), btn(t('copy'), () => copyText(u), { cls: 'sm' }))));
+    else if (s.lan_access) net.appendChild(h('p', { class: 'hint', style: { margin: 0 } }, t('set_phone_restart')));
+    else net.appendChild(h('div', null, btn(t('team_enable_net'), async () => {
+      try { await ctx.api.saveSettings({ lan_access: true }); toast(t('saved')); paint(); } catch (e) { toast(e.message, 'bad'); }
+    }, { cls: 'primary' })));
+    if (!s.require_login) net.appendChild(chip(t('team_login_off'), 'warn'));
+    net.appendChild(h('p', { class: 'hint', style: { margin: 0 } }, t('team_server_note', { port: sys.port || s.port })));
+    body.appendChild(net);
+
+    body.appendChild(h('section', { class: 'card stack' },
+      h('div', { class: 'card-head' }, h('h2', null, t('team_people')), chip(t('team_users_count', { n: others }), others ? 'info' : 'warn')),
+      h('p', { class: 'hint', style: { margin: 0 } }, t('team_people_hint')),
+      h('div', null, btn(t('admin_user_new'), () => { tab = 'users'; paint(); editUser(null); }, { icon: 'plus', cls: 'primary' }))));
+
+    const url = urls[0] || t('team_url_placeholder');
+    const text = h('textarea', { id: 'team-invite', rows: 7, readonly: true },
+      t('team_invite_text', { app: s.app_name || 'regTester', url }));
+    body.appendChild(h('section', { class: 'card stack' }, h('h2', null, t('team_invite')),
+      h('p', { class: 'hint', style: { margin: 0 } }, t('team_invite_hint')),
+      h('label', { class: 'field', for: 'team-invite' }, t('team_invite'), text),
+      h('div', null, btn(t('team_copy_invite'), () => copyText(text.value), { cls: 'primary' }))));
   }
 
   // -------------------------------------------------------------- pages

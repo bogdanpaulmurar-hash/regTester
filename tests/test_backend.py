@@ -54,6 +54,27 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(ConflictError):
             self.db.update(r["id"], {"title": "d3"}, "u", expected_version=1)
 
+    def test_password_recovery(self):
+        from backend.auth import Auth
+        auth = Auth(self.db)
+        auth.update_user("admin", {"password": "forgotten", "active": True}, "admin")
+        token, _ = auth.login("admin", "forgotten")
+        auth.create_user({"username": "ana", "role": "editor", "password": "pass1"}, "admin")
+        auth.update_user("ana", {"active": False}, "admin")
+        self.assertIsNone(auth.login("admin", "new1"))
+        auth.reset_password("Admin", "new1")
+        self.assertIsNone(auth.user_for_token(token), "old sessions end")
+        _, user = auth.login("admin", "new1")
+        self.assertTrue(user["must_change"])
+        auth.reset_password("ana", "back1")
+        self.assertTrue(auth.get_user("ana")["active"])
+        created = auth.reset_password("rescue", "abcd")
+        self.assertEqual(created["role"], "admin")
+        actions = [h["action"] for h in self.db.history(section="admin")]
+        self.assertIn("password-reset", actions)
+        with self.assertRaises(ValueError):
+            auth.reset_password("admin", "x")
+
     def test_settings_history(self):
         self.db.set_settings({"language": "de", "unknown": 1}, "admin")
         self.assertEqual(self.db.get_settings()["language"], "de")

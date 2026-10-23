@@ -33,7 +33,13 @@ def main(argv=None) -> int:
     ap.add_argument("--tray", action="store_true", help="started at login: do not open the browser")
     ap.add_argument("--no-tray", action="store_true")
     ap.add_argument("--port", type=int, help="override the port from settings for this run")
+    ap.add_argument("--list-users", action="store_true", help="show the user accounts and exit")
+    ap.add_argument("--reset-password", metavar="USER",
+                    help="set a new password for USER (creates USER as admin if missing) and exit")
     args = ap.parse_args(argv)
+
+    if args.list_users or args.reset_password:
+        return recovery(args)
 
     ctx = AppContext(args.data, ROOT / "web")
     log = logging.getLogger("regtester")
@@ -78,6 +84,69 @@ def main(argv=None) -> int:
     finally:
         server.stop()
     return 0
+
+
+CLI_TEXT = {
+    "en": {"none": "No user accounts yet. The first start creates admin / admin.",
+           "head": "User accounts in {db}:", "disabled": "disabled", "must": "must change password",
+           "new": "New password for '{u}': ", "again": "Repeat it: ", "short": "At least 4 characters, both entries equal.",
+           "done": "Done. Log in as '{u}' with the new password; you will be asked to choose your own.",
+           "temp": "Temporary password for '{u}': {pw}"},
+    "de": {"none": "Noch keine Benutzerkonten. Der erste Start legt admin / admin an.",
+           "head": "Benutzerkonten in {db}:", "disabled": "deaktiviert", "must": "muss Passwort ändern",
+           "new": "Neues Passwort für '{u}': ", "again": "Wiederholen: ", "short": "Mindestens 4 Zeichen, beide Eingaben gleich.",
+           "done": "Fertig. Melden Sie sich als '{u}' mit dem neuen Passwort an; danach wählen Sie ein eigenes.",
+           "temp": "Temporäres Passwort für '{u}': {pw}"},
+    "ro": {"none": "Nu există încă utilizatori. Prima pornire creează admin / admin.",
+           "head": "Utilizatori în {db}:", "disabled": "dezactivat", "must": "trebuie să schimbe parola",
+           "new": "Parolă nouă pentru '{u}': ", "again": "Repetă parola: ", "short": "Minimum 4 caractere, ambele la fel.",
+           "done": "Gata. Intră ca '{u}' cu parola nouă; vei fi rugat să-ți alegi una proprie.",
+           "temp": "Parolă temporară pentru '{u}': {pw}"},
+}
+
+
+def recovery(args) -> int:
+    """Console access to the accounts, for whoever can open the data folder on this machine."""
+    import getpass
+    import secrets
+
+    from backend.auth import Auth
+    from backend.db import Database
+
+    db = Database(Path(args.data) / "regtester.db")
+    lang = db.get_settings().get("language", "ro")
+    tx = CLI_TEXT.get(lang, CLI_TEXT["en"])
+    try:
+        auth = Auth(db)
+        if args.list_users:
+            users = auth.list_users()
+            if not users:
+                print(tx["none"])
+            print(tx["head"].format(db=db.path))
+            for u in users:
+                flags = [] if u["active"] else [tx["disabled"]]
+                if u["must_change"]:
+                    flags.append(tx["must"])
+                print(f"  {u['username']:<20} {u['role']:<8} {', '.join(flags)}")
+            if not args.reset_password:
+                return 0
+        user = args.reset_password.strip().lower()
+        if sys.stdin and sys.stdin.isatty():
+            for _ in range(3):
+                pw = getpass.getpass(tx["new"].format(u=user))
+                if len(pw) >= 4 and pw == getpass.getpass(tx["again"]):
+                    break
+                print(tx["short"])
+            else:
+                return 1
+        else:  # no console to type into: hand out a temporary password
+            pw = secrets.token_urlsafe(9)
+            print(tx["temp"].format(u=user, pw=pw))
+        auth.reset_password(user, pw, actor="recovery (console)")
+        print(tx["done"].format(u=user))
+        return 0
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":

@@ -50,6 +50,17 @@ Fiecare secțiune are tab-ul **Istoric**: fișierele importate și fiecare modif
 
 Datele stau în `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`). Alt folder: `python regtester.py --data D:\regTester`.
 
+### Am uitat parola
+
+- Un administrator îți poate seta o parolă nouă: **Administrare › Utilizatori › Editează** (sau „Generează parolă temporară”). La următoarea logare alegi una proprie.
+- Dacă niciun administrator nu se mai poate loga: pe calculatorul unde rulează regTester, dublu-click pe **`reset-parola.bat`** din folderul aplicației. Afișează utilizatorii, întreabă numele (implicit `admin`) și parola nouă. Contul e reactivat, sesiunile vechi se închid, iar acțiunea intră în Istoric. Merge și cu aplicația pornită.
+- Din linia de comandă: `python regtester.py --list-users` și `python regtester.py --reset-password admin`. Un nume necunoscut creează un administrator nou.
+- Datele nu se pierd: baza rămâne neatinsă, se schimbă doar parola.
+
+### Autentificare unică (SSO)
+
+În **Administrare › Securitate** sunt pregătite câmpurile pentru Microsoft Entra ID (tenant ID, client ID și adresa de redirect de trecut în înregistrarea aplicației). Conectarea cu Microsoft se activează într-o versiune următoare; logarea locală rămâne mereu disponibilă ca rezervă.
+
 ## Telefon și echipă
 
 - Pe același Wi-Fi/rețea: **Setări › Acces de pe telefon** › bifează „Permite acces din rețea”, repornește, deschide pe telefon adresa afișată (`http://IP-ul-PC:8765`). Pe Android/iOS poți face „Adaugă pe ecranul principal”.

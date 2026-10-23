@@ -46,11 +46,18 @@ export async function render(root, ctx) {
     const boxes = PAGES.map(p => h('input', { type: 'checkbox', id: 'u-p-' + p, checked: sections.has('*') || sections.has(p), disabled: sections.has('*') }));
     allBox.addEventListener('change', () => boxes.forEach(b => { b.disabled = allBox.checked; if (allBox.checked) b.checked = true; }));
     const active = h('input', { type: 'checkbox', id: 'u-active', checked: u ? u.active : true });
+    const genNote = h('div', { style: { marginTop: '6px' } });
     modal({
       title: isNew ? t('admin_user_new') : `${t('edit')} · ${u.username}`,
       body: [
         h('div', { class: 'grid-form' }, h('label', { class: 'field', for: 'u-name' }, t('username'), name), h('label', { class: 'field', for: 'u-disp' }, t('admin_display'), disp),
           h('label', { class: 'field', for: 'u-role' }, t('admin_role'), role), h('label', { class: 'field', for: 'u-pw' }, isNew ? t('password') : t('admin_pw_reset'), pw)),
+        h('div', null, btn(t('admin_pw_generate'), () => {
+          const abc = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+          const rnd = crypto.getRandomValues(new Uint32Array(12));
+          pw.type = 'text'; pw.value = Array.from(rnd, n => abc[n % abc.length]).join('');
+          clear(genNote).appendChild(chip(t('admin_pw_generated', { pw: pw.value }), 'info'));
+        }, { cls: 'sm', icon: 'wand' }), genNote),
         h('p', { class: 'hint', style: { margin: 0 } }, t('admin_roles_hint')),
         h('h3', null, t('admin_pages')),
         h('label', { class: 'check', for: 'u-all' }, allBox, t('admin_all_pages')),
@@ -100,6 +107,25 @@ export async function render(root, ctx) {
       h('label', { class: 'check', for: 'a-req' }, req, t('admin_require_login')),
       h('p', { class: 'hint', style: { margin: 0 } }, t('admin_require_login_hint')),
       h('div', null, btn(t('save'), async () => { try { await ctx.api.saveSettings({ require_login: req.checked }); toast(t('saved')); } catch (e) { toast(e.message, 'bad'); } }, { cls: 'primary' }))));
+    const sso = { provider: 'entra', tenant_id: '', client_id: '', enabled: false, ...(s.sso || {}) };
+    const tenant = h('input', { type: 'text', id: 'a-sso-tenant', value: sso.tenant_id, autocomplete: 'off', placeholder: '00000000-0000-0000-0000-000000000000' });
+    const client = h('input', { type: 'text', id: 'a-sso-client', value: sso.client_id, autocomplete: 'off', placeholder: '00000000-0000-0000-0000-000000000000' });
+    const redirect = `${location.origin}/api/sso/callback`;
+    body.appendChild(h('section', { class: 'card stack' },
+      h('div', { class: 'card-head' }, h('h2', null, t('admin_sso')), chip(t('admin_sso_soon'), 'warn')),
+      h('p', { class: 'hint', style: { margin: 0 } }, t('admin_sso_hint')),
+      h('div', { class: 'grid-form' },
+        h('label', { class: 'field', for: 'a-sso-prov' }, t('admin_sso_provider'), h('select', { id: 'a-sso-prov' }, h('option', { value: 'entra', selected: true }, 'Microsoft Entra ID'))),
+        h('label', { class: 'field', for: 'a-sso-tenant' }, t('admin_sso_tenant'), tenant),
+        h('label', { class: 'field', for: 'a-sso-client' }, t('admin_sso_client'), client),
+        h('label', { class: 'field', for: 'a-sso-redir' }, t('admin_sso_redirect'), h('input', { type: 'text', id: 'a-sso-redir', value: redirect, readonly: true }))),
+      h('label', { class: 'check', for: 'a-sso-on' }, h('input', { type: 'checkbox', id: 'a-sso-on', checked: false, disabled: true }), `${t('admin_sso_enabled')} (${t('admin_sso_soon')})`),
+      h('div', null, btn(t('save'), async () => {
+        try { await ctx.api.saveSettings({ sso: { provider: 'entra', tenant_id: tenant.value.trim(), client_id: client.value.trim(), enabled: false } }); toast(t('saved')); }
+        catch (e) { toast(e.message, 'bad'); }
+      }, { cls: 'primary' }))));
+    if (!ctx.api.demo) body.appendChild(h('section', { class: 'card stack' }, h('h2', null, t('admin_recovery')),
+      h('p', { class: 'hint', style: { margin: 0 } }, t('admin_recovery_hint'))));
     const sys = await ctx.api.system().catch(() => ({}));
     body.appendChild(h('section', { class: 'card stack' }, h('h2', null, t('admin_system')),
       h('div', { class: 'small' }, `${t('set_data_dir')}: `, h('span', { class: 'mono', style: { overflowWrap: 'anywhere' } }, sys.data_dir || '—')),

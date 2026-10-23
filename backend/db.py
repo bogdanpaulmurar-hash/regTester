@@ -39,6 +39,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "port": 8765,
     "lan_access": False,
     "require_login": True,
+    # single sign-on, prepared for Microsoft Entra ID; the sign-in flow itself comes later
+    "sso": {"provider": "entra", "tenant_id": "", "client_id": "", "enabled": False},
     "autostart": False,
     "start_minimized": True,
     "open_browser_on_start": True,

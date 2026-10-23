@@ -317,12 +317,14 @@ def make_handler(ctx: AppContext):
                     self._json(s); return
                 if method == "PUT":
                     body = self._body()
-                    sensitive = {"port", "lan_access", "require_login", "log_retention_days", "backup_keep"}
+                    sensitive = {"port", "lan_access", "require_login", "sso", "log_retention_days", "backup_keep"}
                     if user["role"] != "admin" and sensitive.intersection(body):
                         raise ApiError(403, "admin only")
                     if user["role"] == "viewer":
                         raise ApiError(403, "forbidden")
                     before = ctx.db.get_settings()
+                    if isinstance(body.get("sso"), dict):
+                        body["sso"]["enabled"] = False  # sign-in with Microsoft is not available yet
                     if "autostart" in body:
                         system.set_autostart(bool(body["autostart"]))
                     s = ctx.db.set_settings(body, user["username"])

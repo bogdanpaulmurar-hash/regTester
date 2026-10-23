@@ -6,6 +6,7 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - Pornire: `start.bat` (fără consolă, icon în tray) sau `python regtester.py --no-tray`; se deschide `http://127.0.0.1:8765`
 - Teste backend: `python -m unittest discover -s tests`
 - Test complet în browser: `python tests/e2e_smoke.py` (Playwright)
+- Acces de urgență: `reset-parola.bat` sau `python regtester.py --reset-password USER` (`--list-users`); un nume necunoscut creează un admin
 - Date exemplu: `python tools/make_samples.py` → `sample-data/`
 - Demo fără server: `web/index.html` deschis direct
 - Versiune (acum 0.2.0): `UI_VERSION` în `web/js/version.js` = `__version__` în `backend/__init__.py`. Un modul JS nou se adaugă și în lista `SHELL` din `web/sw.js` (cu `CACHE` incrementat)

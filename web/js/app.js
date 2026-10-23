@@ -136,7 +136,12 @@ function showLogin(message) {
   h('label', { class: 'field', for: 'login-user' }, t('username'), user),
   h('label', { class: 'field', for: 'login-pass' }, t('password'), pass),
   err, h('button', { type: 'submit', class: 'btn primary' }, t('login')),
-  h('div', { class: 'hint' }, t('login_hint')))));
+  h('div', { class: 'hint' }, t('login_hint')),
+  h('button', { type: 'button', class: 'linkish', id: 'login-forgot', onclick: () => modal({
+    title: t('login_forgot'),
+    body: t('login_forgot_text').split('\n\n').map(p => h('p', null, p)),
+    footer: c => [btn(t('close'), c, { cls: 'primary' })],
+  }) }, t('login_forgot')))));
 }
 
 function forcePasswordChange() {

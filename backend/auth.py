@@ -127,6 +127,31 @@ class Auth:
                 (now(), actor, "admin", username, "user-delete", username),
             )
 
+    def reset_password(self, username: str, password: str, actor: str = "recovery") -> dict[str, Any]:
+        """Emergency access from the machine that holds the database (console / reset-parola.bat).
+
+        Sets a new password, re-enables the account, ends its open sessions and asks for a new
+        password at the next login. An unknown name creates a new administrator, so a lost or
+        renamed admin account can always be replaced.
+        """
+        username = str(username or "").strip().lower()
+        if len(str(password or "")) < 4:
+            raise ValueError("password too short")
+        if not self.get_user(username):
+            created = self.create_user({"username": username, "display": username, "role": "admin",
+                                        "password": password, "must_change": True}, actor=actor)
+            return created
+        pw_hash, salt = hash_password(str(password))
+        with self.db.tx() as c:
+            c.execute("UPDATE users SET pw_hash=?, pw_salt=?, active=1, must_change=1 WHERE username=?",
+                      (pw_hash, salt, username))
+            c.execute("DELETE FROM sessions WHERE username=?", (username,))
+            c.execute(
+                "INSERT INTO history(ts,user,section,record_id,action,summary) VALUES(?,?,?,?,?,?)",
+                (now(), actor, "admin", username, "password-reset", f"{username}: password reset, account active"),
+            )
+        return self.get_user(username)  # type: ignore[return-value]
+
     def _admin_count(self) -> int:
         return self.db.q("SELECT COUNT(*) n FROM users WHERE role='admin' AND active=1")[0]["n"]
 

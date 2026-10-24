@@ -5,14 +5,16 @@ import { t } from '../i18n.js';
 import { openImport } from '../importer.js';
 import { DM_FIELDS, regspecRecord } from '../regtool.js';
 import { indexDoc, search, similarTo } from '../search.js';
-import { btn, chip, clear, debounce, download, emptyState, fmtDate, h, highlight, iso, modal, seg, snippet, store, tabs, toCsv } from '../util.js';
+import {
+  btn, chip, clear, debounce, directed, download, emptyState, fmtDate, h, highlight, iso, listOrder, modal, orderToggle, seg, snippet, store, tabs, toCsv,
+} from '../util.js';
 
 export const SPEC_KINDS = ['spec', 'regspec', 'bug', 'issue', 'procedure', 'note'];
 const KIND_CHIP = { spec: 'info', regspec: 'info', bug: 'bad', issue: 'warn', procedure: 'ok', note: '' };
 const STATUS_CHIP = { approved: 'ok', freigegeben: 'ok', open: 'warn', 'in progress': 'info', done: 'ok', closed: '', obsolete: '' };
 
 export async function render(root, ctx, params) {
-  const st = Object.assign({ tab: 'search', q: '', fuzzy: true, sort: 'score', saved: [] }, store('specs') || {});
+  const st = Object.assign({ tab: 'search', q: '', fuzzy: true, sort: 'score', tsort: 'updated', saved: [] }, store('specs') || {});
   const save = () => store('specs', st);
   const canWrite = ctx.canWriteSection('specs');
   let docs = [];
@@ -49,7 +51,8 @@ export async function render(root, ctx, params) {
     body.appendChild(h('div', { class: 'card stack' },
       h('div', { class: 'toolbar' }, h('div', { class: 'grow' }, input),
         h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: st.fuzzy, onchange: e => { st.fuzzy = e.target.checked; save(); results(); } }), t('specs_fuzzy')),
-        seg([['score', t('specs_sort_score')], ['updated', t('specs_sort_updated')], ['key', t('specs_sort_key')]], st.sort, v => { st.sort = v; save(); paint(); }),
+        seg([['score', t('specs_sort_score')], ['updated', t('sort_updated')], ['key', t('specs_sort_key')]], st.sort, v => { st.sort = v; save(); paint(); }),
+        st.sort === 'updated' ? orderToggle('specs.search', () => results()) : null,
         btn(t('specs_syntax'), syntaxHelp, { cls: 'ghost sm' }),
         btn(t('specs_save_search'), () => { if (st.q.trim() && !st.saved.includes(st.q.trim())) { st.saved.push(st.q.trim()); save(); paintSaved(); } }, { cls: 'sm' })),
       savedBox));
@@ -72,7 +75,7 @@ export async function render(root, ctx, params) {
 
     function results() {
       const { results: res, terms } = search(docs, st.q, { fuzzy: st.fuzzy });
-      if (st.sort === 'updated') res.sort((a, b) => b.doc.r.updated_at - a.doc.r.updated_at);
+      if (st.sort === 'updated') res.sort(directed((a, b) => a.doc.r.updated_at - b.doc.r.updated_at, listOrder('specs.search')));
       if (st.sort === 'key') res.sort((a, b) => String(a.doc.r.key).localeCompare(String(b.doc.r.key), undefined, { numeric: true }));
       clear(facetBox);
       const facet = (label, field, get) => {
@@ -121,7 +124,9 @@ export async function render(root, ctx, params) {
     const box = h('div');
     const paintT = () => {
       clear(box);
-      const list = docs.filter(d => kind === 'all' || d.r.kind === kind).map(d => d.r).sort((a, b) => String(a.key).localeCompare(String(b.key), undefined, { numeric: true }));
+      const byKey = (a, b) => String(a.key).localeCompare(String(b.key), undefined, { numeric: true });
+      const list = docs.filter(d => kind === 'all' || d.r.kind === kind).map(d => d.r)
+        .sort(st.tsort === 'key' ? byKey : (a, b) => directed((x, y) => x.updated_at - y.updated_at, listOrder('specs.table'))(a, b) || byKey(a, b));
       box.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
         h('thead', null, h('tr', null, [t('f_key'), t('f_type'), t('f_title'), t('f_status'), t('f_module'), t('f_release'), t('f_updated')].map(x => h('th', null, x)))),
         h('tbody', null, list.map(r => h('tr', { class: 'click', tabindex: '0', onclick: () => edit(r) },
@@ -129,7 +134,10 @@ export async function render(root, ctx, params) {
           h('td', null, r.data?.status || ''), h('td', null, r.data?.module || ''), h('td', null, r.data?.release || ''), h('td', { class: 'nowrap' }, fmtDate(r.updated_at))))))));
     };
     const segBox = h('div');
-    const paintSeg = () => clear(segBox).appendChild(seg([['all', t('all')], ...kinds.map(k => [k, t('sk_' + k)])], kind, v => { kind = v; paintSeg(); paintT(); }));
+    const paintSeg = () => clear(segBox).appendChild(h('div', { class: 'toolbar' },
+      seg([['all', t('all')], ...kinds.map(k => [k, t('sk_' + k)])], kind, v => { kind = v; paintSeg(); paintT(); }),
+      seg([['updated', t('sort_updated')], ['key', t('specs_sort_key')]], st.tsort, v => { st.tsort = v; save(); paintSeg(); paintT(); }),
+      st.tsort === 'updated' ? orderToggle('specs.table', () => paintT()) : null));
     body.append(segBox, box);
     paintSeg();
     paintT();

@@ -1,6 +1,6 @@
 // Change history: who changed what and when, with field-by-field comparison and restore.
 import { t } from './i18n.js';
-import { btn, chip, clear, emptyState, fmtDateTime, h, toast } from './util.js';
+import { btn, chip, clear, directed, emptyState, fmtDateTime, h, listOrder, orderToggle, toast } from './util.js';
 
 const ACTION_KIND = { create: 'ok', update: 'info', 'import-update': 'info', delete: 'bad', restore: 'warn', import: '' };
 
@@ -33,7 +33,8 @@ export async function renderHistory(container, ctx, opts = {}) {
   clear(container);
   const text = h('input', { type: 'search', placeholder: t('hist_filter'), 'aria-label': t('hist_filter') });
   const list = h('div', { class: 'list' });
-  container.appendChild(h('div', { class: 'stack' }, opts.compact ? null : h('div', { class: 'toolbar' }, h('div', { class: 'grow' }, text)), list));
+  container.appendChild(h('div', { class: 'stack' },
+    opts.compact ? null : h('div', { class: 'toolbar' }, h('div', { class: 'grow' }, text), orderToggle('history', () => paint())), list));
   let entries = [];
   try {
     if (opts.record_id) entries = await ctx.api.history({ record_id: opts.record_id, limit: opts.limit || 200 });
@@ -46,7 +47,8 @@ export async function renderHistory(container, ctx, opts = {}) {
   const paint = () => {
     clear(list);
     const q = text.value.trim().toLowerCase();
-    const shown = entries.filter(e => !q || `${e.user} ${e.section} ${e.action} ${e.summary} ${e.after?.title || e.before?.title || ''}`.toLowerCase().includes(q));
+    // The server sends the latest entries; "oldest first" reverses that window.
+    const shown = entries.slice().sort(directed((a, b) => a.ts - b.ts || a.id - b.id, opts.compact ? 'desc' : listOrder('history'))).filter(e => !q || `${e.user} ${e.section} ${e.action} ${e.summary} ${e.after?.title || e.before?.title || ''}`.toLowerCase().includes(q));
     if (!shown.length) { list.appendChild(emptyState(t('hist_empty'))); return; }
     for (const e of shown.slice(0, 400)) {
       const title = e.after?.title || e.before?.title || e.record_id;
@@ -77,13 +79,16 @@ export async function renderHistory(container, ctx, opts = {}) {
 
 export async function renderImports(container, ctx, sections) {
   clear(container);
-  const all = (await Promise.all(sections.map(s => ctx.api.imports(s).catch(() => [])))).flat().sort((a, b) => b.ts - a.ts);
+  const all = (await Promise.all(sections.map(s => ctx.api.imports(s).catch(() => [])))).flat();
   if (!all.length) { container.appendChild(emptyState(t('imports_empty'))); return; }
-  container.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+  const box = h('div');
+  container.append(h('div', { class: 'toolbar' }, orderToggle('imports', () => paint())), box);
+  const paint = () => clear(box).appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
     h('thead', null, h('tr', null, [t('f_date'), t('f_file'), t('f_section'), t('import_mode'), t('f_rows'), t('f_user')].map(x => h('th', null, x)))),
-    h('tbody', null, all.map(i => h('tr', null,
+    h('tbody', null, all.slice().sort(directed((a, b) => a.ts - b.ts, listOrder('imports'))).map(i => h('tr', null,
       h('td', { class: 'nowrap' }, fmtDateTime(i.ts)), h('td', null, i.filename), h('td', null, t('sec_' + i.section)),
       h('td', null, t('mode_' + i.mode)), h('td', { class: 'num' }, i.count), h('td', null, i.user)))))));
+  paint();
 }
 
 /** Standard "History" tab body for a section page: imports + change log. */

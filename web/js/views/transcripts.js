@@ -4,7 +4,9 @@ import { historyTab } from '../history-view.js';
 import { t } from '../i18n.js';
 import { openImport, pickFile } from '../importer.js';
 import { cleanTranscript, detectFeatures, parseTranscript } from '../transcript.js';
-import { btn, chip, clear, copyText, emptyState, fmtDate, h, iso, store, tabs, toast, words } from '../util.js';
+import {
+  btn, chip, clear, copyText, directed, emptyState, fmtDate, h, iso, listOrder, orderToggle, store, tabs, toast, words,
+} from '../util.js';
 
 const LANG_NAME = { ro: 'Romanian', en: 'English', de: 'German' };
 
@@ -118,7 +120,8 @@ export async function render(root, ctx) {
   // ----------------------------------------------------------- sessions
   function sessionList() {
     if (!sessions.length) { body.appendChild(emptyState(t('trs_no_sessions'))); return; }
-    body.appendChild(h('div', { class: 'list card' }, sessions.slice().sort((a, b) => String(b.data?.date).localeCompare(String(a.data?.date))).map(s => h('div', { class: 'li' },
+    body.appendChild(h('div', { class: 'toolbar' }, orderToggle('sessions', () => paint())));
+    body.appendChild(h('div', { class: 'list card' }, sessions.slice().sort(directed((a, b) => String(a.data?.date).localeCompare(String(b.data?.date)) || a.created_at - b.created_at, listOrder('sessions'))).map(s => h('div', { class: 'li' },
       h('div', { class: 'grow' }, h('b', null, s.title), h('div', { class: 'small muted' }, `${fmtDate(s.data?.date)} · ${s.data?.source || ''} · v${s.version}`),
         s.data?.features?.length ? h('div', { class: 'pill-row', style: { marginTop: '4px' } }, s.data.features.map(f => chip(f, 'info'))) : null),
       s.data?.summary ? chip(t('trs_has_summary'), 'ok') : chip(t('trs_no_summary'), 'warn'),

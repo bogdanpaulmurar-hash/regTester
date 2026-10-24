@@ -35,6 +35,8 @@ export function esc(s) {
 }
 
 const ICONS = {
+  sortDesc: 'M7 4v16M3 16l4 4 4-4M13 6h8M13 12h6M13 18h4',
+  sortAsc: 'M7 20V4M3 8l4-4 4 4M13 6h4M13 12h6M13 18h8',
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
   calendar: 'M4 6h16v14H4zM4 10h16M8 3v5M16 3v5',
   grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
@@ -256,6 +258,31 @@ export function store(key, value) {
     localStorage.setItem('rt.' + key, JSON.stringify(value));
   } catch { /* storage unavailable */ }
   return value;
+}
+
+// ---------------------------------------------------------------- list order
+/** Chronological direction of one list, kept in this browser only (rt.order.<list>). Newest first by default. */
+export function listOrder(list) { return store('order.' + list) === 'asc' ? 'asc' : 'desc'; }
+
+/** Turn a comparator written oldest-first into one that follows the given direction. */
+export function directed(cmp, dir) { return dir === 'asc' ? cmp : (a, b) => cmp(b, a); }
+
+/** Newest/oldest first switch for one list; saves the choice and calls onChange(dir). */
+export function orderToggle(list, onChange) {
+  const b = h('button', { type: 'button', class: 'btn sm order-toggle', title: t('sort_toggle') });
+  const paint = dir => {
+    clear(b).append(icon(dir === 'asc' ? 'sortAsc' : 'sortDesc'), dir === 'asc' ? t('sort_oldest') : t('sort_newest'));
+    b.dataset.order = dir;
+    b.setAttribute('aria-label', `${t('sort_toggle')}: ${dir === 'asc' ? t('sort_oldest') : t('sort_newest')}`);
+  };
+  paint(listOrder(list));
+  b.addEventListener('click', () => {
+    const dir = listOrder(list) === 'asc' ? 'desc' : 'asc';
+    store('order.' + list, dir);
+    paint(dir);
+    onChange(dir);
+  });
+  return b;
 }
 
 /** Highlight query terms inside text, returning a fragment. */

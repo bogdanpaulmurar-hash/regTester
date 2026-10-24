@@ -6,7 +6,10 @@ import { historyTab } from '../history-view.js';
 import { t } from '../i18n.js';
 import { openImport } from '../importer.js';
 import { analyse, statusOf } from '../triage.js';
-import { btn, chip, clear, confirmBox, copyText, download, emptyState, fmtDate, fmtDateTime, h, iso, modal, seg, store, tabs, toast, toCsv, toIsoDate } from '../util.js';
+import {
+  btn, chip, clear, confirmBox, copyText, directed, download, emptyState, fmtDate, fmtDateTime, h, iso, listOrder, modal, orderToggle, seg, store, tabs, toast,
+  toCsv, toIsoDate,
+} from '../util.js';
 
 const TYPE_KIND = { new: 'bad', recurring: 'warn', flaky: 'info', known: '' };
 
@@ -73,6 +76,13 @@ export async function render(root, ctx) {
     search.addEventListener('input', () => { st.q = search.value; save(); paintTable(); });
     const sel = (key, label, opts) => h('select', { 'aria-label': label, onchange: e => { st[key] = e.target.value; save(); paintTable(); } },
       h('option', { value: '' }, label), opts.map(([v, l]) => h('option', { value: v, selected: st[key] === v }, l)));
+    // Sort field; the newest/oldest switch only applies to "last seen".
+    const sortBox = h('div', { class: 'toolbar', style: { margin: 0 } });
+    const paintSort = () => clear(sortBox).append(
+      h('select', { 'aria-label': t('err_sort'), onchange: e => { st.sort = e.target.value; save(); paintSort(); paintTable(); } },
+        [['last', t('err_sort_last')], ['runs', t('err_sort_runs')], ['id', t('err_sort_id')]].map(([v, l]) => h('option', { value: v, selected: st.sort === v }, l))),
+      st.sort === 'last' ? orderToggle('tri.errors', () => paintTable()) : '');
+    paintSort();
     body.appendChild(h('div', { class: 'toolbar' },
       h('div', { class: 'grow' }, search),
       sel('status', t('err_all_status'), [['open', t('err_open_only')], ...uniq(r => [r.data?.status]).map(s => [s, s])]),
@@ -80,8 +90,7 @@ export async function render(root, ctx) {
       sel('app', t('err_all_apps'), uniq(r => [r.data?.app]).map(s => [s, s])),
       sel('resp', t('err_all_resp'), uniq(r => r.data?.responsibles || []).map(s => [s, s])),
       sel('only', t('err_all_items'), [['changed', t('err_only_changed')], ...(w ? [['window', t('err_only_window')]] : [])]),
-      h('select', { 'aria-label': t('err_sort'), onchange: e => { st.sort = e.target.value; save(); paintTable(); } },
-        [['last', t('err_sort_last')], ['runs', t('err_sort_runs')], ['id', t('err_sort_id')]].map(([v, l]) => h('option', { value: v, selected: st.sort === v }, l))),
+      sortBox,
       btn(t('err_report'), () => copyText(errorReport()), { icon: 'copy' }),
       btn('CSV', exportErrors, { icon: 'download' })));
     const tableBox = h('div');
@@ -94,7 +103,8 @@ export async function render(root, ctx) {
         && (!st.only || (st.only === 'changed' ? changed.has(r.key) : w && within(r.data?.last, w.s, w.e))))
         .sort((a, b) => st.sort === 'runs' ? (b.data?.runs?.[2] || 0) - (a.data?.runs?.[2] || 0)
           : st.sort === 'id' ? String(a.key).localeCompare(String(b.key), undefined, { numeric: true })
-            : String(b.data?.last || '').localeCompare(String(a.data?.last || '')));
+            : directed((x, y) => String(x.data?.last || '').localeCompare(String(y.data?.last || '')), listOrder('tri.errors'))(a, b)
+              || String(a.key).localeCompare(String(b.key), undefined, { numeric: true }));
     }
     function paintTable() {
       clear(tableBox);
@@ -125,6 +135,15 @@ export async function render(root, ctx) {
     const d = r.data || {};
     const hist = snaps.slice().reverse().map(sn => ({ sn, it: (sn.data.items || []).find(x => x[0] === r.key) })).filter(x => x.it);
     const max = Math.max(1, ...hist.map(x => x.it[2] || 0));
+    // hist runs oldest → newest (bars); the table follows the list's newest/oldest switch.
+    const histBox = h('div', { class: 'stack' });
+    const paintHist = () => clear(histBox).append(
+      h('div', { class: 'toolbar', style: { margin: 0 } }, orderToggle('tri.errhist', () => paintHist())),
+      h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+        h('thead', null, h('tr', null, [t('f_date'), t('f_file'), t('f_status'), t('err_runs_total')].map(x => h('th', null, x)))),
+        h('tbody', null, (listOrder('tri.errhist') === 'asc' ? hist : hist.slice().reverse()).map(({ sn, it }) => h('tr', null, h('td', { class: 'nowrap' }, fmtDate(sn.data.date)), h('td', { class: 'small' }, sn.data.file),
+          h('td', null, chip(it[1] || '—', statusKind(it[1]))), h('td', { class: 'num' }, it[2])))))));
+    paintHist();
     modal({
       title: `${r.key} · ${r.title}`, wide: true,
       body: [
@@ -136,10 +155,7 @@ export async function render(root, ctx) {
         hist.length > 1 ? h('div', { class: 'card' }, h('h3', null, t('err_hist')),
           h('div', { class: 'bars', role: 'img', 'aria-label': t('err_hist') }, hist.map(({ sn, it }) => h('div', { class: 'b', title: `${sn.data.file}: ${it[1]} · ${it[2]}` },
             h('em', null, it[2]), h('span', { style: { height: Math.max(3, (it[2] || 0) / max * 100) + '%' } }), h('small', null, fmtDate(sn.data.date, { day: '2-digit', month: 'short' })))))) : null,
-        hist.length ? h('div', { class: 'table-wrap' }, h('table', { class: 't' },
-          h('thead', null, h('tr', null, [t('f_date'), t('f_file'), t('f_status'), t('err_runs_total')].map(x => h('th', null, x)))),
-          h('tbody', null, hist.slice().reverse().map(({ sn, it }) => h('tr', null, h('td', { class: 'nowrap' }, fmtDate(sn.data.date)), h('td', { class: 'small' }, sn.data.file),
-            h('td', null, chip(it[1] || '—', statusKind(it[1]))), h('td', { class: 'num' }, it[2])))))) : null],
+        hist.length ? histBox : null],
     });
   }
 
@@ -287,9 +303,10 @@ export async function render(root, ctx) {
 
   function runList() {
     if (!runs.length) { body.appendChild(emptyState(t('tri_empty'))); return; }
+    body.appendChild(h('div', { class: 'toolbar' }, orderToggle('tri.runs', () => paint())));
     body.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
       h('thead', null, h('tr', null, [t('f_date'), t('f_title'), t('tri_k_run'), t('tri_k_failed'), t('f_file'), ''].map(x => h('th', null, x)))),
-      h('tbody', null, runs.slice().reverse().map(r => h('tr', null,
+      h('tbody', null, (listOrder('tri.runs') === 'asc' ? runs : runs.slice().reverse()).map(r => h('tr', null,
         h('td', { class: 'nowrap' }, fmtDate(r.data?.date)), h('td', null, r.title), h('td', { class: 'num' }, (r.data?.results || []).length),
         h('td', { class: 'num' }, (r.data?.results || []).filter(x => x.status === 'failed').length), h('td', { class: 'small muted' }, r.data?.source || ''),
         h('td', null, canWrite ? btn(t('delete'), async () => {

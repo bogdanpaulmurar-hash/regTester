@@ -1,6 +1,6 @@
 // Application log viewer (server log file + events from the interface).
 import { t } from '../i18n.js';
-import { btn, clear, copyText, debounce, emptyState, h, seg, store } from '../util.js';
+import { btn, clear, copyText, debounce, emptyState, h, listOrder, orderToggle, seg, store } from '../util.js';
 
 export async function render(root, ctx) {
   const st = Object.assign({ level: 'INFO', q: '', auto: false }, store('logs') || {});
@@ -15,6 +15,7 @@ export async function render(root, ctx) {
     h('div', { class: 'toolbar' },
       seg([['DEBUG', 'Debug'], ['INFO', 'Info'], ['WARNING', t('logs_warn')], ['ERROR', t('logs_err')]], st.level, v => { st.level = v; save(); root.innerHTML = ''; render(root, ctx); }),
       h('div', { class: 'grow' }, search),
+      orderToggle('logs', () => load()),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: st.auto, onchange: e => { st.auto = e.target.checked; save(); } }), t('logs_auto'))),
     list);
 
@@ -23,7 +24,8 @@ export async function render(root, ctx) {
     catch (e) { clear(list).appendChild(h('div', { class: 'chip bad' }, e.message)); return; }
     clear(list);
     if (!lines.length) { list.appendChild(emptyState(t('logs_empty'))); return; }
-    for (const l of lines) list.appendChild(h('div', { class: 'log-line' }, h('span', { class: 'muted' }, l.ts), h('span', { class: 'lvl-' + l.level }, l.level),
+    // The server sends the newest lines first.
+    for (const l of listOrder('logs') === 'asc' ? lines.slice().reverse() : lines) list.appendChild(h('div', { class: 'log-line' }, h('span', { class: 'muted' }, l.ts), h('span', { class: 'lvl-' + l.level }, l.level),
       h('span', { class: 'msg' }, h('span', { class: 'muted' }, l.source.replace('regtester.', '') + ' · '), l.message)));
   }
   await load();

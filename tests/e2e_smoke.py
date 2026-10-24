@@ -16,6 +16,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -95,6 +96,20 @@ def main():
             assert any(r["title"] == "V8.4 Deployment PROD" and r["data"]["start"] > "2027-01-01" for r in tl2), "clone"
             for view in ["Calendar", "Year", "List", "Timeline", "History"]:
                 page.get_by_role("tab", name=view).click(); page.wait_for_timeout(250)
+            # list order: newest first by default, the switch reverses it and is remembered
+            def list_starts():
+                cells = page.locator(".page table.t tr.click td:nth-child(3)").all_inner_texts()
+                return [datetime.strptime(c.strip().replace("Sept", "Sep"), "%d %b %Y") for c in cells if c.strip()]
+            page.get_by_role("tab", name="List").click(); page.wait_for_timeout(300)
+            starts = list_starts()
+            assert len(starts) > 20 and starts == sorted(starts, reverse=True), starts[:5]
+            page.locator(".order-toggle").first.click(); page.wait_for_timeout(300)
+            assert list_starts() == sorted(starts), "oldest first"
+            assert page.evaluate("localStorage.getItem('rt.order.timeline.list')") == '"asc"'
+            page.reload(); page.wait_for_selector(".order-toggle")
+            assert page.locator(".order-toggle").first.get_attribute("data-order") == "asc"
+            page.locator(".order-toggle").first.click(); page.wait_for_timeout(300)
+            assert list_starts() == sorted(starts, reverse=True), "back to newest first"
 
             # test case catalogue + coverage
             page.goto(BASE + "#coverage"); page.wait_for_selector(".page-head")
@@ -231,6 +246,16 @@ def main():
                 for pg in ["dashboard", "timeline", "coverage", "triage", "transcripts", "docs", "specs", "history", "logs", "settings", "admin"]:
                     page.evaluate(f"location.hash = '{pg}'"); page.wait_for_timeout(600); page.wait_for_selector(".page-head", timeout=8000)
                     assert page.locator(".page > .card > pre.pre").count() == 0, f"{lang}/{pg}: " + page.inner_text(".page")[:300]
+            # every newest/oldest switch on every tab works (JavaScript errors are collected above)
+            toggles = 0
+            for pg in ["timeline", "coverage", "triage", "transcripts", "docs", "specs", "history", "logs"]:
+                page.evaluate(f"location.hash = '{pg}'"); page.wait_for_timeout(500); page.wait_for_selector(".page-head")
+                for i in range(page.locator(".page [role=tab]").count()):
+                    page.locator(".page [role=tab]").nth(i).click(); page.wait_for_timeout(250)
+                    for _ in range(2):
+                        for j in range(page.locator(".page .order-toggle").count()):
+                            page.locator(".page .order-toggle").nth(j).click(); page.wait_for_timeout(150); toggles += 1
+            assert toggles >= 20, toggles
             hist = api("history?limit=1000", token)
             assert any(h["action"] == "import" for h in hist)
             logs = api("logs?limit=200", token)

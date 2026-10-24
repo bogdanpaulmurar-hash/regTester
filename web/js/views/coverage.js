@@ -6,14 +6,36 @@ import { t } from '../i18n.js';
 import { openImport, pickFile } from '../importer.js';
 import { buildCoverage, coverCols, featuresFromDoc } from '../match.js';
 import { catalogFromList, catalogFromTree, looksLikeTree, mergeTree } from '../regtool.js';
-import { btn, chip, clear, copyText, download, emptyState, h, iso, modal, normalize, seg, store, tabs, toast, toCsv } from '../util.js';
+import { cmpVersion } from '../timeline-gen.js';
+import {
+  btn, chip, clear, copyText, directed, download, emptyState, h, iso, listOrder, modal, normalize, orderToggle, seg, store, tabs, toast, toCsv,
+} from '../util.js';
 
 const CELL = { ok: ['ok', 'cov_ok'], weak: ['warn', 'cov_weak'], gap: ['bad', 'cov_gap'], na: ['', 'cov_na'] };
 const QCHIP = { high: 'bad', hight: 'bad', medium: 'warn', low: '' };
 const groupOf = x => [x.data?.main, x.data?.sub, x.data?.secondary].filter(Boolean).join(' › ');
+// Record timestamps; a feature read from a specification document takes them from that document.
+const added = x => x.created_at ?? x.doc?.created_at ?? 0;
+const changed = x => x.updated_at ?? x.doc?.updated_at ?? added(x);
+const byGroup = (a, b) => (a.data?.main ? 0 : 1) - (b.data?.main ? 0 : 1) || groupOf(a).localeCompare(groupOf(b)) || a.title.localeCompare(b.title);
+// Sort keys per list: comparators written oldest-first; `chrono` ones follow the newest/oldest switch.
+// Ties (e.g. a whole import saved at once) always fall back to `tie`, whatever the direction.
+const CAT_SORT = { added: { cmp: (a, b) => added(a) - added(b), chrono: true, tie: byGroup }, updated: { cmp: (a, b) => changed(a) - changed(b), chrono: true, tie: byGroup }, group: { cmp: byGroup } };
+const FEAT_SORT = {
+  updated: { cmp: (a, b) => changed(a.feature) - changed(b.feature), chrono: true },
+  release: { cmp: (a, b) => cmpVersion(a.feature.data?.release || '', b.feature.data?.release || '') || changed(a.feature) - changed(b.feature), chrono: true },
+  name: { cmp: (a, b) => a.feature.title.localeCompare(b.feature.title) },
+};
+FEAT_SORT.updated.tie = FEAT_SORT.release.tie = FEAT_SORT.name.cmp;
+const sortWith = (defs, key, list) => {
+  const d = defs[key] || Object.values(defs)[0];
+  if (!d.chrono) return d.cmp;
+  const cmp = directed(d.cmp, listOrder(list));
+  return d.tie ? (a, b) => cmp(a, b) || d.tie(a, b) : cmp;
+};
 
 export async function render(root, ctx) {
-  const st = Object.assign({ tab: 'catalog', filter: 'all', release: '', q: '', cq: '', app: '', quality: '', main: '', uncat: false }, store('cov') || {});
+  const st = Object.assign({ tab: 'catalog', filter: 'all', release: '', q: '', cq: '', app: '', quality: '', main: '', uncat: false, csort: 'added', fsort: 'updated' }, store('cov') || {});
   if (!store('cov.v2')) { st.tab = 'catalog'; store('cov.v2', true); }
   let limit = 300;
   const save = () => store('cov', st);
@@ -68,7 +90,8 @@ export async function render(root, ctx) {
       h('option', { value: '' }, label), opts.map(v => h('option', { value: v, selected: st[key] === v }, v)));
     body.appendChild(h('div', { class: 'toolbar' }, h('div', { class: 'grow' }, search),
       sel('main', t('cat_all_main'), uniq(x => x.data?.main)), sel('quality', t('cat_all_quality'), uniq(x => x.data?.quality)),
-      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: st.uncat, onchange: e => { st.uncat = e.target.checked; save(); paintTable(); } }), t('cat_only_uncat'))));
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: st.uncat, onchange: e => { st.uncat = e.target.checked; save(); paintTable(); } }), t('cat_only_uncat')),
+      sortBar(CAT_SORT, 'csort', [['added', t('sort_added')], ['updated', t('sort_updated')], ['group', t('sort_group')]], 'cov.catalog', () => paintTable())));
     const tableBox = h('div');
     body.appendChild(tableBox);
     function paintTable() {
@@ -77,16 +100,17 @@ export async function render(root, ctx) {
       const vis = tests.filter(x => (!st.app || (x.data?.app || '—') === st.app) && (!st.quality || x.data?.quality === st.quality)
         && (!st.main || x.data?.main === st.main) && (!st.uncat || !x.data?.main)
         && (!q || normalize(`${x.key} ${x.title} ${x.data?.main} ${x.data?.sub} ${x.data?.secondary}`).includes(q)))
-        .sort((a, b) => (a.data?.main ? 0 : 1) - (b.data?.main ? 0 : 1) || groupOf(a).localeCompare(groupOf(b)) || a.title.localeCompare(b.title));
+        .sort(sortWith(CAT_SORT, st.csort, 'cov.catalog'));
       if (!vis.length) { tableBox.appendChild(emptyState(t('no_match'))); return; }
       tableBox.appendChild(h('div', { class: 'hint' }, t('n_items', { n: vis.length })));
       const counts = {}; vis.forEach(x => { const g = groupOf(x) || t('cat_uncat'); counts[g] = (counts[g] || 0) + 1; });
       const trs = []; let grp = null;
       for (const x of vis.slice(0, limit)) {
         const g = groupOf(x) || t('cat_uncat');
-        if (g !== grp) { grp = g; trs.push(h('tr', null, h('td', { colspan: 5, style: { background: 'var(--surface-2)', fontWeight: 600 } }, g, h('span', { class: 'small muted' }, ` · ${counts[g]}`)))); }
+        if (st.csort === 'group' && g !== grp) { grp = g; trs.push(h('tr', null, h('td', { colspan: 5, style: { background: 'var(--surface-2)', fontWeight: 600 } }, g, h('span', { class: 'small muted' }, ` · ${counts[g]}`)))); }
         trs.push(h('tr', { class: 'click', tabindex: '0', onclick: () => editTest(x), onkeydown: e => { if (e.key === 'Enter') editTest(x); } },
-          h('td', { class: 'mono nowrap' }, x.key.startsWith('TREE:') ? '—' : x.key), h('td', null, x.title), h('td', { class: 'small' }, x.data?.app || ''),
+          h('td', { class: 'mono nowrap' }, x.key.startsWith('TREE:') ? '—' : x.key),
+          h('td', null, x.title, st.csort !== 'group' ? h('div', { class: 'small muted' }, g) : null), h('td', { class: 'small' }, x.data?.app || ''),
           h('td', null, x.data?.quality ? chip(x.data.quality, QCHIP[normalize(x.data.quality)] || '') : ''), h('td', { class: 'num' }, x.data?.count ?? '')));
       }
       tableBox.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
@@ -134,7 +158,20 @@ export async function render(root, ctx) {
     const q = normalize(st.q);
     return rows.filter(r => (!st.release || r.feature.data?.release === st.release)
       && (st.filter === 'all' || (st.filter === 'gaps' ? r.gaps > 0 : st.filter === 'errors' ? r.errors.length > 0 : r.gaps === 0))
-      && (!q || normalize(`${r.feature.key} ${r.feature.title} ${r.feature.data?.module}`).includes(q)));
+      && (!q || normalize(`${r.feature.key} ${r.feature.title} ${r.feature.data?.module}`).includes(q)))
+      .sort(sortWith(FEAT_SORT, st.fsort, 'cov.features'));
+  }
+
+  /** Sort field select plus the newest/oldest switch, which only shows for date-like fields. */
+  function sortBar(defs, key, opts, list, repaint) {
+    const box = h('div', { class: 'toolbar', style: { margin: 0 } });
+    const fill = () => {
+      clear(box).append(h('select', { 'aria-label': t('sort_label'), onchange: e => { st[key] = e.target.value; save(); fill(); repaint(); } },
+        opts.map(([v, l]) => h('option', { value: v, selected: st[key] === v }, l))));
+      if ((defs[st[key]] || Object.values(defs)[0]).chrono) box.append(orderToggle(list, repaint));
+    };
+    fill();
+    return box;
   }
 
   function matrix() {
@@ -156,7 +193,8 @@ export async function render(root, ctx) {
       seg([['all', `${t('all')} · ${rows.length}`], ['gaps', `${t('cov_with_gaps')} · ${withGaps}`], ['done', `${t('cov_complete')} · ${rows.length - withGaps}`], ['errors', `${t('cov_with_errors')} · ${withErr}`]], st.filter, v => { st.filter = v; save(); paint(); }),
       releases.length ? h('select', { 'aria-label': t('f_release'), onchange: e => { st.release = e.target.value; save(); paint(); } },
         h('option', { value: '' }, t('tl_all_releases')), releases.map(r => h('option', { value: r, selected: st.release === r }, r))) : null,
-      h('div', { class: 'grow' }, search)));
+      h('div', { class: 'grow' }, search),
+      sortBar(FEAT_SORT, 'fsort', [['updated', t('sort_updated')], ['release', t('sort_release')], ['name', t('sort_name')]], 'cov.features', () => paintTable())));
     const tableBox = h('div');
     body.appendChild(tableBox);
     body.appendChild(h('div', { class: 'hint' }, t('cov_legend')));

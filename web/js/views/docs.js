@@ -5,7 +5,9 @@ import { historyTab } from '../history-view.js';
 import { LANGS, t, tIn } from '../i18n.js';
 import { richText } from '../richtext.js';
 import { pickFile } from '../importer.js';
-import { btn, chip, clear, confirmBox, copyText, download, emptyState, esc, fmtDateTime, h, normalize, similarity, store, tabs, toast } from '../util.js';
+import {
+  btn, chip, clear, confirmBox, copyText, directed, download, emptyState, esc, fmtDateTime, h, listOrder, normalize, orderToggle, similarity, store, tabs, toast,
+} from '../util.js';
 
 function localizedDefault() {
   const d = structuredClone(DEFAULT_TEMPLATE);
@@ -216,7 +218,8 @@ export async function render(root, ctx) {
   // ------------------------------------------------------------- list
   function docList() {
     if (!docs.length) { body.appendChild(emptyState(t('docs_none'))); return; }
-    body.appendChild(h('div', { class: 'card list' }, docs.slice().sort((a, b) => b.updated_at - a.updated_at).map(d => d.data?.format === SPEC_FORMAT ? specListItem(d) : h('div', { class: 'li' },
+    body.appendChild(h('div', { class: 'toolbar' }, orderToggle('docs', () => paint())));
+    body.appendChild(h('div', { class: 'card list' }, docs.slice().sort(directed((a, b) => a.updated_at - b.updated_at, listOrder('docs'))).map(d => d.data?.format === SPEC_FORMAT ? specListItem(d) : h('div', { class: 'li' },
       h('div', { class: 'grow' }, h('b', null, d.title), h('div', { class: 'small muted' }, `${[d.data?.meta?.code, d.data?.meta?.sprint, d.data?.meta?.release].filter(Boolean).join(' · ')} · ${fmtDateTime(d.updated_at)} · v${d.version}`)),
       d.data?.complete ? chip(t('docs_complete'), 'ok') : chip(t('docs_incomplete'), 'warn'),
       btn(t('open'), () => { openDoc(d); st.tab = 'write'; save(); paint(); }, { cls: 'sm' }),

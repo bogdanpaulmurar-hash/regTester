@@ -8,8 +8,8 @@ import {
   SP_FIELDS, TIMELINE_KINDS, toSharePointRows,
 } from '../timeline-gen.js';
 import {
-  addDays, btn, chip, clear, confirmBox, daysBetween, download, emptyState, fmtDate, h, iso, isoWeek, modal, normalize, parseIso,
-  seg, store, tabs, toast, toCsv, toIsoDate,
+  addDays, btn, chip, clear, confirmBox, daysBetween, directed, download, emptyState, fmtDate, h, iso, isoWeek, listOrder, modal, normalize,
+  orderToggle, parseIso, seg, store, tabs, toast, toCsv, toIsoDate,
 } from '../util.js';
 
 const PRIORITY = ['deployment', 'regtest', 'performance', 'integration', 'review', 'protocol', 'documentation', 'qa', 'freeze', 'planning', 'holiday', 'other', 'sprint'];
@@ -104,6 +104,7 @@ export async function render(root, ctx) {
     filterBox.appendChild(h('div', { class: 'toolbar' },
       st.view === 'gantt' ? seg([['kind', t('tl_lanes_kind')], ['env', t('tl_lanes_env')], ['release', t('tl_lanes_release')]], st.lanes, v => { st.lanes = v; save(); paint(); }) : null,
       st.view === 'gantt' ? seg([['week', t('zoom_week')], ['month', t('zoom_month')], ['quarter', t('zoom_quarter')]], st.zoom, z => { st.zoom = z; save(); paint(); }) : null,
+      st.view === 'list' ? orderToggle('timeline.list', () => paint()) : null,
       st.view !== 'list' ? btn(t('today'), () => scrollToday(), { cls: 'sm' }) : null));
     const present = new Set(all.map(r => r.kind || 'other'));
     filterBox.appendChild(h('div', { class: 'pill-row', role: 'group', 'aria-label': t('f_type') },
@@ -246,6 +247,7 @@ export async function render(root, ctx) {
 
   // ------------------------------------------------------------------ list
   function list(items) {
+    items = items.slice().sort(directed((a, b) => a.s - b.s || a.e - b.e, listOrder('timeline.list')));
     const rows = [];
     let month = '';
     const cols = [t('f_type'), t('f_title'), t('f_start'), t('f_end'), t('f_days'), t('f_release'), t('f_sprint'), t('f_env'), 'OT', t('f_owner')];
@@ -358,11 +360,11 @@ export async function render(root, ctx) {
       clear(out);
       const ev = build();
       const existing = records.filter(r => r.data?.release === st2.target.trim());
-      out.append(h('h3', null, t('tl_clone_preview', { n: ev.length })),
+      out.append(h('div', { class: 'card-head' }, h('h3', null, t('tl_clone_preview', { n: ev.length })), orderToggle('timeline.clone', () => preview())),
         existing.length ? h('div', { class: 'chip warn' }, t('tl_clone_existing', { n: existing.length, r: st2.target })) : null,
         ev.some(e => e.data.holiday_warning) ? h('div', { class: 'chip warn' }, t('tl_clone_holiday', { n: ev.filter(e => e.data.holiday_warning).length })) : null,
         h('div', { class: 'table-wrap', style: { maxHeight: '280px' } }, h('table', { class: 't' }, h('tbody', null,
-          ev.slice().sort((a, b) => String(a.data.start).localeCompare(String(b.data.start))).map(e => h('tr', null, h('td', null, t('k_' + e.kind)), h('td', null, e.title),
+          ev.slice().sort(directed((a, b) => String(a.data.start).localeCompare(String(b.data.start)), listOrder('timeline.clone'))).map(e => h('tr', null, h('td', null, t('k_' + e.kind)), h('td', null, e.title),
             h('td', { class: 'num nowrap' }, fmtDate(e.data.start)), h('td', { class: 'num nowrap' }, fmtDate(e.data.end)),
             h('td', null, e.data.holiday_warning ? chip(t('k_holiday'), 'warn') : null)))))));
     }

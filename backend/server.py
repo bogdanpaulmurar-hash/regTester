@@ -100,7 +100,26 @@ class AppContext:
 
     @property
     def backup_dir(self) -> Path:
+        """Team copies: the shared folder when connected, otherwise this computer's default place."""
         return self.shared.folder / "backups" if self.shared else self.local_backup_dir
+
+    @property
+    def chosen_backup_dir(self) -> Path | None:
+        """Folder chosen on this computer (Administration › Backups), if any."""
+        path = str(self.db.get_settings().get("backup_dir") or "").strip()
+        return Path(path) if path else None
+
+    @property
+    def user_backup_dir(self) -> Path:
+        """Where manual copies and exports go: the chosen folder, otherwise the team place."""
+        return self.chosen_backup_dir or self.backup_dir
+
+    def backup_places(self) -> dict[str, Path]:
+        places = {"team": self.backup_dir}
+        chosen = self.chosen_backup_dir
+        if chosen and chosen.resolve() != self.backup_dir.resolve():
+            places["chosen"] = chosen
+        return places
 
     def shared_status(self, admin: bool = False) -> dict[str, Any]:
         if self.shared:
@@ -183,17 +202,30 @@ class AppContext:
         return held
 
     def startup_backup(self, settings: dict[str, Any]) -> None:
-        """Local data: every start. Shared folder: the first start of the day on any computer."""
-        if not settings["backup_on_start"] or self.db.readonly:
+        """Local data: every start. Shared folder: the first start of the day on any computer.
+        A folder chosen on this computer gets its own daily copy and, if enabled, a daily JSON export."""
+        if self.db.readonly:
             return
-        if self.shared:
-            today = time.strftime("%Y%m%d")
-            if any(p.name.startswith(f"regtester-{today}") for p in self.backup_dir.glob("regtester-*.db")):
-                return
-            with self.shared.lock.held("backup"):
+        today = time.strftime("%Y%m%d")
+        done_today = lambda folder, ext: folder.exists() and any(folder.glob(f"regtester-{today}-*.{ext}"))  # noqa: E731
+        if settings["backup_on_start"]:
+            if self.shared:
+                if not done_today(self.backup_dir, "db"):
+                    with self.shared.lock.held("backup"):
+                        system.backup_database(self.db_path, self.backup_dir, settings["backup_keep"])
+            else:
                 system.backup_database(self.db_path, self.backup_dir, settings["backup_keep"])
-            return
-        system.backup_database(self.db_path, self.backup_dir, settings["backup_keep"])
+            chosen = self.backup_places().get("chosen")
+            if chosen and not done_today(chosen, "db"):
+                try:
+                    system.backup_database(self.db_path, chosen, settings["backup_keep"])
+                except OSError as exc:
+                    LOG.error("Backup to the chosen folder %s failed: %s", chosen, exc)
+        if settings.get("export_on_start") and not done_today(self.user_backup_dir, "json"):
+            try:
+                system.write_export(self.db.export_data("startup", __version__), self.user_backup_dir, settings["export_keep"])
+            except OSError as exc:
+                LOG.error("Export on start to %s failed: %s", self.user_backup_dir, exc)
 
     def start_monitor(self) -> None:
         threading.Thread(target=self._monitor, name="shared-monitor", daemon=True).start()
@@ -512,12 +544,17 @@ def make_handler(ctx: AppContext):
                     body = self._body()
                     body.pop("shared_path", None)  # only through /api/shared/connect
                     sensitive = {"port", "lan_access", "require_login", "sso", "log_retention_days", "backup_keep",
-                                 "session_idle_minutes"}
+                                 "session_idle_minutes", "backup_dir", "export_on_start", "export_keep"}
                     if user["role"] != "admin" and sensitive.intersection(body):
                         raise ApiError(403, "admin only")
                     if user["role"] == "viewer":
                         raise ApiError(403, "forbidden")
                     before = ctx.db.get_settings()
+                    if str(body.get("backup_dir") or "").strip():
+                        chk = system.check_backup_folder(str(body["backup_dir"]))
+                        if not chk["ok"]:
+                            raise ApiError(400, chk["error"])
+                        body["backup_dir"] = chk["path"]
                     if isinstance(body.get("sso"), dict):
                         body["sso"]["enabled"] = False  # sign-in with Microsoft is not available yet
                     if "autostart" in body:
@@ -595,28 +632,98 @@ def make_handler(ctx: AppContext):
 
             if head == "backups":
                 self._admin(user)
-                if method == "GET":
+                places = ctx.backup_places()
+
+                def place_dir(body: dict) -> Path:
+                    place = str(body.get("place") or "team")
+                    if place not in places:
+                        raise ApiError(404, "unknown backup place")
+                    return places[place]
+
+                def export_source(body: dict) -> Any:
+                    """The export to look at: sent in the request (a file picked in the browser) or a listed file."""
+                    if isinstance(body.get("data"), dict):
+                        return body["data"]
                     try:
-                        self._json(system.list_backups(ctx.backup_dir)); return
-                    except OSError:
-                        self._json([]); return
+                        src = system.backup_path(str(body.get("name") or ""), place_dir(body))
+                        if src.suffix != ".json":
+                            raise KeyError(src.name)
+                        return json.loads(src.read_text(encoding="utf-8"))
+                    except (KeyError, OSError, ValueError) as exc:
+                        raise ApiError(400, "export_invalid") from exc
+
+                if method == "GET" and not arg:
+                    out = []
+                    for place, folder in places.items():
+                        try:
+                            files = system.list_backups(folder)
+                            error = ""
+                        except OSError:
+                            files, error = [], "backup_dir_not_writable"
+                        out.append({"place": place, "dir": str(folder), "files": files, "error": error,
+                                    "cloud": system.cloud_provider(folder)})
+                    s = ctx.db.get_settings()
+                    self._json({"places": out, "backup_dir": s["backup_dir"], "export_on_start": s["export_on_start"],
+                                "export_keep": s["export_keep"], "backup_keep": s["backup_keep"],
+                                "can_pick": self._is_local()}); return
+                if method == "POST" and arg == "check":
+                    self._json(system.check_backup_folder(str(self._body().get("path") or ""))); return
+                if method == "POST" and arg == "pick":
+                    if not self._is_local():
+                        raise ApiError(403, "only on the computer running regTester")
+                    body = self._body()
+                    picked = system.pick_folder(str(body.get("initial") or ""), str(body.get("title") or "regTester"))
+                    if picked is None:
+                        raise ApiError(501, "folder_dialog_unavailable")
+                    self._json({"path": picked, "check": system.check_backup_folder(picked) if picked else None}); return
+                if method == "POST" and arg == "export":
+                    body = self._body()
+                    data = ctx.db.export_data(user["username"], __version__)
+                    if isinstance(body.get("prefs"), dict):
+                        data["prefs"] = {k: v for k, v in body["prefs"].items() if isinstance(k, str) and k != "token"}
+                    if body.get("target") == "download":
+                        LOG.info("%s downloaded a full export", user["username"])
+                        self._json(data); return
+                    s = ctx.db.get_settings()
+                    p = system.write_export(data, ctx.user_backup_dir, s["export_keep"])
+                    self._json({"name": p.name, "dir": str(p.parent)}); return
+                if method == "POST" and arg == "preview":
+                    try:
+                        self._json(ctx.db.restore_preview(export_source(self._body()))); return
+                    except ValueError as exc:
+                        raise ApiError(400, str(exc)) from exc
                 if ctx.db.readonly:
                     raise ReadOnlyError("read only")
+                if method == "POST" and arg == "restore-json":
+                    body = self._body()
+                    data = export_source(body)
+                    label = str(body.get("name") or body.get("label") or "export")[:120]
+                    system.backup_database(ctx.db_path, ctx.backup_dir, 1000)  # safety copy first
+                    try:
+                        res = ctx.db.restore_export(data, body.get("sections") or [], bool(body.get("settings")), user["username"], label)
+                    except ValueError as exc:
+                        raise ApiError(400, str(exc)) from exc
+                    LOG.warning("%s restored %s from JSON %s: %s", user["username"], ", ".join(res["sections"]) or "-", label, res)
+                    res["prefs"] = data.get("prefs") if body.get("prefs") and isinstance(data.get("prefs"), dict) else None
+                    self._json(res); return
                 if method == "POST" and arg == "restore":
-                    name = self._body().get("name", "")
-                    src = system.backup_path(name, ctx.backup_dir)
+                    body = self._body()
+                    name = body.get("name", "")
+                    src = system.backup_path(name, place_dir(body))
+                    if src.suffix != ".db":
+                        raise ApiError(400, "not a database copy")
                     system.backup_database(ctx.db_path, ctx.backup_dir, 1000)  # safety copy first
                     ctx.db.restore_from_file(src, user["username"])
                     LOG.warning("%s restored backup %s", user["username"], name)
                     self._json({"ok": True}); return
-                if method == "POST":
+                if method == "POST" and not arg:
                     s = ctx.db.get_settings()
                     if ctx.shared:
                         with ctx.shared.lock.held(user["username"]):
-                            p = system.backup_database(ctx.db_path, ctx.backup_dir, s["backup_keep"])
+                            p = system.backup_database(ctx.db_path, ctx.user_backup_dir, s["backup_keep"])
                     else:
-                        p = system.backup_database(ctx.db_path, ctx.backup_dir, s["backup_keep"])
-                    self._json({"name": p.name}); return
+                        p = system.backup_database(ctx.db_path, ctx.user_backup_dir, s["backup_keep"])
+                    self._json({"name": p.name, "dir": str(p.parent)}); return
 
             raise ApiError(404, "unknown endpoint")
 

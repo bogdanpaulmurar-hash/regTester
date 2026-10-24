@@ -10,7 +10,7 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - Folder comun: `python regtester.py --shared "\\server\regTester"` (`""` = înapoi la date locale) sau Administrare › Echipă
 - Date exemplu: `python tools/make_samples.py` → `sample-data/`
 - Demo fără server: `web/index.html` deschis direct
-- Versiune (acum 0.4.1): `UI_VERSION` în `web/js/version.js` = `__version__` în `backend/__init__.py`. Un modul JS nou se adaugă și în lista `SHELL` din `web/sw.js` (cu `CACHE` incrementat)
+- Versiune (acum 0.5.0): `UI_VERSION` în `web/js/version.js` = `__version__` în `backend/__init__.py`. Un modul JS nou se adaugă și în lista `SHELL` din `web/sw.js` (cu `CACHE` incrementat)
 
 ## Hartă
 - `backend/`: `server.py` (HTTP/API, `AppContext` alege unde stau datele), `db.py` (schemă, istoric, importuri), `shared.py` (folder comun: fișier de blocare, copie locală, mod citire), `auth.py` (utilizatori, roluri, sesiuni), `system.py` (log, autostart, backup), `tray.py`
@@ -24,6 +24,7 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - Orice text nou trece prin i18n în EN/DE/RO. Orice modificare de date intră în Istoric (cine, când, ce), cu restaurare.
 - `sample-data/` conține doar date fictive. Datele reale nu intră niciodată în repo.
 - Folder comun: orice scriere trece prin `db.tx()`/`write_guard()` (fișierul de blocare + `BEGIN IMMEDIATE`); verificarea de versiune se face în tranzacție. Fără WAL pe share. Sesiunile nu se scriu niciodată în baza comună. Polling-ul din fundal (`GET /api/shared`) nu reînnoiește sesiunea.
+- Backup: copii `.db` (complete, cu istoric) și export `.json` (`db.export_data`/`restore_export`, fără utilizatori). Restaurarea din JSON scrie intrări normale în Istoric (create/update/delete), după o copie `.db` de siguranță. Folderul ales (`backup_dir`) e setare locală; cloud = doar avertisment.
 - Listele cronologice arată implicit cele mai noi primele, cu butonul comun `orderToggle()` din `util.js`; alegerea se ține per listă în browser (`rt.order.<listă>`), nu în baza comună.
 - Pagina „Sesiuni PO” e ascunsă implicit (poate fi redenumită/refolosită). Exportul de rezultate al run-urilor e amânat la final.
 - Analiză + plan, apoi aprobarea utilizatorului, apoi implementare.

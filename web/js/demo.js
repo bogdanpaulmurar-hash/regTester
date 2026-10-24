@@ -376,7 +376,16 @@ export class DemoApi {
     this._hist('admin', name, 'user-update', Object.keys(u).join(', ')); this.save(); return x;
   }
   async deleteUser(name) { this.users_ = this.users_.filter(u => u.username !== name); this._hist('admin', name, 'user-delete', name); this.save(); }
-  async backups() { return [{ name: 'regtester-20261017-090102.db', size: 1843200, ts: now() - 3600 * 5 }]; }
+  async backups() {
+    return { places: [{ place: 'team', dir: '%LOCALAPPDATA%\\regTester\\backups', error: '', cloud: '',
+      files: [{ name: 'regtester-20261017-090102.db', size: 1843200, ts: now() - 3600 * 5, kind: 'db' }] }],
+    backup_dir: '', export_on_start: false, export_keep: 10, backup_keep: 10, can_pick: false };
+  }
   async backupNow() { return { name: 'regtester-demo.db' }; }
   async restoreBackup() { throw new Error('Not available in demo mode'); }
+  async backupCheck(path) { return { path, ok: false, error: 'backup_dir_not_writable', cloud: '' }; }
+  async backupPick() { throw new Error('Not available in demo mode'); }
+  async backupExport() { throw new Error('Not available in demo mode'); }
+  async backupPreview() { throw new Error('Not available in demo mode'); }
+  async restoreJson() { throw new Error('Not available in demo mode'); }
 }

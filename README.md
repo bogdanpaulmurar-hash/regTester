@@ -56,7 +56,7 @@ Fiecare secțiune are tab-ul **Istoric**: fișierele importate și fiecare modif
 ## Setări și administrare
 
 - **Setări**: limba implicită (EN/DE/RO), temă, nume aplicație, **logo propriu** (apare în meniu, tab și tray), **pornire cu Windows**, pornire direct în tray, backup la pornire, **acces din rețea pentru telefon**, tiparul codurilor de funcție, pragul de potrivire, cuvintele de umplutură, promptul AI, culorile timeline-ului, nivelul și păstrarea log-ului, contul meu.
-- **Administrare** (doar admin): **Echipă** (folder comun în rețea, activitate și deblocare, invitație gata de copiat), **Pagini** (ascunde paginile nefolosite și redenumește-le în meniu; datele rămân), utilizatori, roluri (doar citire / editor / administrator), pagini permise per utilizator, autentificare obligatorie, backup-uri și restaurare, audit, oprirea aplicației.
+- **Administrare** (doar admin): **Echipă** (folder comun în rețea, activitate și deblocare, invitație gata de copiat), **Pagini** (ascunde paginile nefolosite și redenumește-le în meniu; datele rămân), utilizatori, roluri (doar citire / editor / administrator), pagini permise per utilizator, autentificare obligatorie, **backup-uri** (folder ales pe fiecare calculator, copii ale bazei, export complet JSON cu toate datele și setările, restaurare cu previzualizare și alegerea părților), audit, oprirea aplicației.
 - **Log**: tot ce face aplicația (autentificări, importuri, modificări, erori), fișiere zilnice în folderul de date, cu filtru pe nivel și căutare.
 
 Datele stau în `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`). Alt folder: `python regtester.py --data D:\regTester`. Cu folder comun, datele echipei stau acolo (vezi „Lucru în echipă”).
@@ -84,6 +84,7 @@ Datele echipei pot sta într-un folder dintr-un **share de rețea Windows** mere
 - **Ce rămâne pe fiecare calculator**: sesiunile de logare, log-ul, copia de rezervă și setările de mașină (port, pornire cu Windows, tray, acces din rețea, calea folderului comun).
 - **Delogare automată** după 30 de minute de inactivitate (se schimbă în Administrare › Securitate).
 - **Backup**: zilnic, în `backups\` din folderul comun, la prima pornire din zi a oricărui calculator.
+- **Folder ales** (Administrare › Backup-uri): copiile tale manuale, exporturile JSON și o copie zilnică proprie ajung acolo. Un folder sincronizat cu cloud-ul (OneDrive, Google Drive, Dropbox) e permis, dar aplicația afișează un avertisment.
 - Pe același Wi-Fi poți deschide regTester și de pe telefon: **Setări › Acces de pe telefon** › „Permite acces din rețea”, repornește, deschide adresa afișată. Întreabă IT-ul înainte să deschizi portul în firewall.
 - Nu folosi un folder OneDrive/SharePoint sincronizat: sincronizarea poate strica baza de date.
 

@@ -55,6 +55,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "log_retention_days": 30,
     "backup_on_start": True,
     "backup_keep": 10,
+    # folder chosen on this computer for backups and exports; empty = the default place
+    "backup_dir": "",
+    # full JSON export (all data + settings) written next to the backups at every start
+    "export_on_start": False,
+    "export_keep": 10,
     "feature_code_regex": r"\b[A-Z]{2,5}-\d{2,6}\b",
     "match_threshold": 0.5,
     "flaky_window": 5,
@@ -80,7 +85,13 @@ ROLES = ("admin", "editor", "viewer")
 
 # Settings that belong to one computer. With a shared folder they stay in the local database.
 LOCAL_KEYS = frozenset({"port", "lan_access", "autostart", "start_minimized", "open_browser_on_start",
-                        "log_level", "log_retention_days", "shared_path"})
+                        "log_level", "log_retention_days", "shared_path", "backup_dir", "export_on_start",
+                        "export_keep"})
+
+EXPORT_FORMAT = "regtester-export"
+EXPORT_VERSION = 1
+# record fields compared and written back by a JSON restore
+RESTORE_FIELDS = ("kind", "key", "title", "body", "data", "tags")
 
 
 class ReadOnlyError(Exception):
@@ -450,6 +461,121 @@ class Database:
         out = {s: 0 for s in SECTIONS}
         out.update({r["section"]: r["n"] for r in rows})
         return out
+
+    # ------------------------------------------------------- JSON export / restore
+    def export_data(self, user: str, app_version: str) -> dict[str, Any]:
+        """Everything needed to rebuild the team data: all records (deleted ones too), settings, import log.
+        Users and passwords stay out; the full history is kept in the .db copies."""
+        rows = self.q("SELECT * FROM records ORDER BY section, created_at")
+        records: dict[str, list[dict[str, Any]]] = {s: [] for s in SECTIONS}
+        for r in rows:
+            if r["section"] in records:
+                records[r["section"]].append({**self.row_to_record(r), "deleted": bool(r["deleted"])})
+        settings = {k: v for k, v in self.get_settings().items() if k not in LOCAL_KEYS}
+        imports = [dict(r) for r in self.q("SELECT * FROM imports ORDER BY ts")]
+        return {"format": EXPORT_FORMAT, "version": EXPORT_VERSION, "app_version": app_version,
+                "exported_at": now(), "exported_by": user, "settings": settings, "records": records, "imports": imports}
+
+    @staticmethod
+    def _check_export(data: Any) -> dict[str, list[dict[str, Any]]]:
+        if not isinstance(data, dict) or data.get("format") != EXPORT_FORMAT:
+            raise ValueError("export_invalid")
+        if int(data.get("version") or 0) > EXPORT_VERSION:
+            raise ValueError("export_newer")
+        recs = data.get("records")
+        if not isinstance(recs, dict):
+            raise ValueError("export_invalid")
+        return {s: [r for r in v if isinstance(r, dict) and r.get("id")] for s, v in recs.items()
+                if s in SECTIONS and isinstance(v, list)}
+
+    def _restore_plan(self, c, section: str, file_recs: list[dict[str, Any]]):
+        """Compare one section with the file: (to_create, to_update, to_delete, unchanged)."""
+        current = {r["id"]: r for r in c.execute("SELECT * FROM records WHERE section=?", (section,)).fetchall()}
+        create, update, delete, same = [], [], [], 0
+        wanted = set()
+        for rec in file_recs:
+            rid = str(rec["id"])
+            wanted.add(rid)
+            clean = self._clean(rec)
+            gone = bool(rec.get("deleted"))
+            row = current.get(rid)
+            if row is None:
+                if not gone:
+                    create.append((rid, clean, rec))
+                continue
+            before = {k: v for k, v in self.row_to_record(row).items() if k in RESTORE_FIELDS}
+            if gone:
+                if not row["deleted"]:
+                    delete.append(row)
+                else:
+                    same += 1
+            elif clean != before or row["deleted"]:
+                update.append((row, before, clean))
+            else:
+                same += 1
+        delete += [r for rid, r in current.items() if rid not in wanted and not r["deleted"]]
+        return create, update, delete, same
+
+    def restore_preview(self, data: Any) -> dict[str, Any]:
+        recs = self._check_export(data)
+        out: dict[str, Any] = {}
+        c = self._conn
+        with self._lock:
+            for section in SECTIONS:
+                if section not in recs:
+                    continue
+                cr, up, de, same = self._restore_plan(c, section, recs[section])
+                out[section] = {"in_file": sum(1 for r in recs[section] if not r.get("deleted")),
+                                "create": len(cr), "update": len(up), "delete": len(de), "same": same}
+        file_settings = data.get("settings") if isinstance(data.get("settings"), dict) else {}
+        current = self.get_settings()
+        changed = sorted(k for k, v in file_settings.items() if k in DEFAULT_SETTINGS and k not in LOCAL_KEYS and current.get(k) != v)
+        return {"sections": out, "settings": changed, "exported_at": data.get("exported_at"),
+                "exported_by": data.get("exported_by"), "app_version": data.get("app_version")}
+
+    def restore_export(self, data: Any, sections: Iterable[str], with_settings: bool, user: str, label: str) -> dict[str, Any]:
+        """Make the chosen sections match the file. Every change is a normal history entry, so it can be undone."""
+        recs = self._check_export(data)
+        chosen = [s for s in SECTIONS if s in set(sections) and s in recs]
+        totals = {"created": 0, "updated": 0, "deleted": 0}
+        ts = now()
+        hist = "INSERT INTO history(ts,user,section,record_id,action,summary,before,after) VALUES(?,?,?,?,?,?,?,?)"
+        with self.tx(user) as c:
+            for section in chosen:
+                cr, up, de, _ = self._restore_plan(c, section, recs[section])
+                for rid, clean, rec in cr:
+                    created_at = rec.get("created_at") if isinstance(rec.get("created_at"), (int, float)) else ts
+                    c.execute(
+                        "INSERT INTO records(id,section,kind,key,title,body,data,tags,version,deleted,created_at,updated_at,created_by,updated_by,import_id)"
+                        " VALUES(?,?,?,?,?,?,?,?,1,0,?,?,?,?,NULL)",
+                        (rid, section, clean["kind"], clean["key"], clean["title"], clean["body"],
+                         json.dumps(clean["data"], ensure_ascii=False), json.dumps(clean["tags"], ensure_ascii=False),
+                         created_at, ts, str(rec.get("created_by") or user), user))
+                    c.execute(hist, (ts, user, section, rid, "create", clean["title"][:200], None,
+                                     json.dumps({"id": rid, **clean}, ensure_ascii=False)))
+                for row, before, clean in up:
+                    c.execute(
+                        "UPDATE records SET kind=?,key=?,title=?,body=?,data=?,tags=?,deleted=0,version=version+1,updated_at=?,updated_by=? WHERE id=?",
+                        (clean["kind"], clean["key"], clean["title"], clean["body"],
+                         json.dumps(clean["data"], ensure_ascii=False), json.dumps(clean["tags"], ensure_ascii=False),
+                         ts, user, row["id"]))
+                    c.execute(hist, (ts, user, section, row["id"], "update", f"{label}: " + ", ".join(k for k in clean if clean[k] != before[k]) or label,
+                                     json.dumps(before, ensure_ascii=False), json.dumps(clean, ensure_ascii=False)))
+                for row in de:
+                    c.execute("UPDATE records SET deleted=1, updated_at=?, updated_by=? WHERE id=?", (ts, user, row["id"]))
+                    c.execute(hist, (ts, user, section, row["id"], "delete", f"{label}: {row['title'][:180]}",
+                                     json.dumps(self.row_to_record(row), ensure_ascii=False), None))
+                totals["created"] += len(cr); totals["updated"] += len(up); totals["deleted"] += len(de)
+                c.execute(hist, (ts, user, section, label, "import",
+                                 f"{label}: +{len(cr)} ~{len(up)} -{len(de)} (restore)", None, None))
+        changed_settings: list[str] = []
+        if with_settings and isinstance(data.get("settings"), dict):
+            values = {k: v for k, v in data["settings"].items() if k in DEFAULT_SETTINGS and k not in LOCAL_KEYS}
+            before = self.get_settings()
+            changed_settings = sorted(k for k, v in values.items() if before.get(k) != v)
+            if changed_settings:
+                self.set_settings(values, user)
+        return {**totals, "sections": chosen, "settings": changed_settings}
 
     @staticmethod
     def _check_section(section: str):

@@ -6,7 +6,8 @@ import { store } from './util.js';
 
 // server error codes with a translated explanation (err_<code> in i18n.js)
 const KNOWN = new Set(['read_only', 'busy', 'shared_unavailable', 'shared_not_found', 'shared_not_writable',
-  'shared_init_required', 'shared_no_db']);
+  'shared_init_required', 'shared_no_db', 'backup_dir_empty', 'backup_dir_relative', 'backup_dir_not_writable', 'export_invalid',
+  'export_newer', 'folder_dialog_unavailable']);
 
 class HttpError extends Error {
   constructor(status, body) {
@@ -72,7 +73,14 @@ class RemoteApi {
   sharedUnlock() { return this.req('POST', 'shared/unlock', {}); }
   backups() { return this.req('GET', 'backups'); }
   backupNow() { return this.req('POST', 'backups'); }
-  restoreBackup(name) { return this.req('POST', 'backups/restore', { name }); }
+  restoreBackup(name, place) { return this.req('POST', 'backups/restore', { name, place }); }
+  backupCheck(path) { return this.req('POST', 'backups/check', { path }); }
+  backupPick(initial, title) { return this.req('POST', 'backups/pick', { initial, title }); }
+  /** body: { target: 'folder' | 'download', prefs } */
+  backupExport(body) { return this.req('POST', 'backups/export', body); }
+  /** body: { name, place } for a listed file, or { data } for a file picked in the browser */
+  backupPreview(body) { return this.req('POST', 'backups/preview', body); }
+  restoreJson(body) { return this.req('POST', 'backups/restore-json', body); }
 }
 
 export async function connect() {

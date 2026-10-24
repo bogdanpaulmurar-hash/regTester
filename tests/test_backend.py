@@ -54,6 +54,65 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(ConflictError):
             self.db.update(r["id"], {"title": "d3"}, "u", expected_version=1)
 
+    def test_json_export_restore(self):
+        keep = self.db.create("specs", {"key": "S-1", "title": "Keep", "body": "a"}, "ana")
+        change = self.db.create("errors", {"key": "E-1", "title": "Old title", "data": {"status": "open"}}, "ana")
+        gone = self.db.create("timeline", {"title": "Deleted before export"}, "ana")
+        self.db.delete(gone["id"], "ana")
+        self.db.set_settings({"flaky_window": 7, "port": 9999}, "ana")
+        data = json.loads(json.dumps(self.db.export_data("ana", "test")))
+        self.assertEqual(data["format"], "regtester-export")
+        self.assertEqual(data["records"]["specs"][0]["title"], "Keep")
+        self.assertTrue(next(r for r in data["records"]["timeline"] if r["id"] == gone["id"])["deleted"])
+        self.assertNotIn("port", data["settings"])  # machine settings stay on the machine
+        self.assertNotIn("users", data)
+        # changes after the export
+        self.db.update(change["id"], {"title": "New title"}, "ion")
+        extra = self.db.create("specs", {"title": "Added later"}, "ion")
+        self.db.delete(keep["id"], "ion")
+        self.db.set_settings({"flaky_window": 3}, "ion")
+        prev = self.db.restore_preview(data)
+        self.assertEqual(prev["sections"]["specs"], {"in_file": 1, "create": 0, "update": 1, "delete": 1, "same": 0})
+        self.assertEqual(prev["sections"]["errors"]["update"], 1)
+        self.assertEqual(prev["settings"], ["flaky_window"])
+        # only specs: errors keep the later change
+        res = self.db.restore_export(data, ["specs"], False, "admin", "regtester-x.json")
+        self.assertEqual((res["created"], res["updated"], res["deleted"]), (0, 1, 1))
+        self.assertEqual([r["title"] for r in self.db.list_records("specs")], ["Keep"])
+        self.assertEqual(self.db.get_record(change["id"])["title"], "New title")
+        self.assertEqual(self.db.get_settings()["flaky_window"], 3)
+        # every change is in the history and can be undone
+        hist = self.db.history(record_id=extra["id"])
+        self.assertEqual(hist[0]["action"], "delete")
+        self.db.restore(hist[0]["id"], "admin")
+        self.assertEqual(len(self.db.list_records("specs")), 2)
+        # everything, with settings
+        res = self.db.restore_export(data, ["specs", "errors", "timeline"], True, "admin", "regtester-x.json")
+        self.assertEqual(self.db.get_record(change["id"])["title"], "Old title")
+        self.assertEqual(self.db.get_settings()["flaky_window"], 7)
+        self.assertEqual(self.db.get_settings()["port"], 9999)
+        self.assertEqual(self.db.list_records("timeline"), [])
+        self.assertEqual(self.db.restore_preview(data)["sections"]["specs"]["same"], 1)
+        with self.assertRaises(ValueError):
+            self.db.restore_preview({"format": "something else"})
+        with self.assertRaises(ValueError):
+            self.db.restore_preview({**data, "version": 99})
+
+    def test_backup_folder_checks(self):
+        from backend import system
+        self.assertEqual(system.cloud_provider(r"C:\Users\ana\OneDrive - Firma\regTester"), "OneDrive")
+        self.assertEqual(system.cloud_provider(r"G:\My Drive\Backups"), "Google Drive")
+        self.assertEqual(system.cloud_provider("/home/ana/Dropbox/rt"), "Dropbox")
+        self.assertEqual(system.cloud_provider(r"\\server\regTester\backups"), "")
+        self.assertEqual(system.cloud_provider(r"D:\Backups\regTester"), "")
+        ok = system.check_backup_folder(str(self.dir / "new" / "folder"))
+        self.assertTrue(ok["ok"] and (self.dir / "new" / "folder").is_dir(), ok)
+        self.assertEqual(system.check_backup_folder("relative/path")["error"], "backup_dir_relative")
+        self.assertEqual(system.check_backup_folder("")["error"], "backup_dir_empty")
+        p = system.write_export({"format": "regtester-export"}, self.dir / "ex", keep=2)
+        self.assertTrue(p.name.startswith("regtester-") and p.suffix == ".json")
+        self.assertEqual([b["kind"] for b in system.list_backups(self.dir / "ex")], ["json"])
+
     def test_password_recovery(self):
         from backend.auth import Auth
         auth = Auth(self.db)
@@ -80,6 +139,26 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(self.db.get_settings()["language"], "de")
         self.assertNotIn("unknown", self.db.get_settings())
         self.assertEqual(self.db.history(section="settings")[0]["summary"], "language")
+
+
+class StartupBackupTests(unittest.TestCase):
+    def test_chosen_folder_and_daily_export(self):
+        d = Path(tempfile.mkdtemp())
+        try:
+            ctx = AppContext(d / "data", ROOT / "web")
+            chosen = d / "chosen"
+            ctx.db.set_settings({"backup_dir": str(chosen), "export_on_start": True}, "t")
+            ctx.db.create("specs", {"title": "x"}, "t")
+            for _ in range(2):
+                ctx.startup_backup(ctx.db.get_settings())
+            self.assertEqual(len(list(chosen.glob("regtester-*.db"))), 1)    # once a day in the chosen folder
+            self.assertEqual(len(list(chosen.glob("regtester-*.json"))), 1)
+            self.assertGreaterEqual(len(list(ctx.local_backup_dir.glob("regtester-*.db"))), 1)
+            data = json.loads(next(chosen.glob("regtester-*.json")).read_text(encoding="utf-8"))
+            self.assertEqual(data["records"]["specs"][0]["title"], "x")
+            ctx.db.close()
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
 
 
 class ApiTests(unittest.TestCase):
@@ -135,7 +214,35 @@ class ApiTests(unittest.TestCase):
         # logs and backups
         self.assertTrue(any("created user vio" in l["message"] for l in self.call("GET", "logs?limit=50", token=tok)[1]))
         self.assertEqual(self.call("POST", "backups", {}, tok)[0], 200)
-        self.assertGreaterEqual(len(self.call("GET", "backups", token=tok)[1]), 1)
+        bk = self.call("GET", "backups", token=tok)[1]
+        self.assertEqual([p["place"] for p in bk["places"]], ["team"])
+        self.assertGreaterEqual(len(bk["places"][0]["files"]), 1)
+        # folder chosen on this computer: copies and exports go there, team copies stay listed
+        chosen = self.dir / "chosen backups"
+        self.assertEqual(self.call("PUT", "settings", {"backup_dir": "not/absolute"}, tok)[0], 400)
+        self.assertEqual(self.call("PUT", "settings", {"backup_dir": str(chosen)}, vt)[0], 403)
+        self.assertEqual(self.call("PUT", "settings", {"backup_dir": str(chosen)}, tok)[0], 200)
+        self.assertTrue(self.call("POST", "backups/check", {"path": str(chosen)}, tok)[1]["ok"])
+        st, ex = self.call("POST", "backups/export", {"prefs": {"order.docs": "asc", "token": "secret"}}, tok)
+        self.assertEqual(st, 200)
+        self.assertEqual(Path(ex["dir"]), chosen)
+        bk = self.call("GET", "backups", token=tok)[1]
+        self.assertEqual([p["place"] for p in bk["places"]], ["team", "chosen"])
+        self.assertEqual(bk["places"][1]["files"][0]["kind"], "json")
+        dl = self.call("POST", "backups/export", {"target": "download"}, tok)[1]
+        self.assertEqual(dl["format"], "regtester-export")
+        # change something, preview and restore from the listed file
+        self.call("PUT", f"records/{rec['id']}", {"record": {"title": "Changed after export"}, "version": 2}, tok)
+        prev = self.call("POST", "backups/preview", {"name": ex["name"], "place": "chosen"}, tok)[1]
+        self.assertEqual(prev["sections"]["specs"]["update"], 1)
+        res = self.call("POST", "backups/restore-json", {"name": ex["name"], "place": "chosen", "sections": ["specs"], "prefs": True}, tok)[1]
+        self.assertEqual(res["updated"], 1)
+        self.assertEqual(res["prefs"], {"order.docs": "asc"})
+        self.assertEqual(next(r for r in self.call("GET", "records?section=specs", token=tok)[1] if r["id"] == rec["id"])["title"], "B")
+        self.assertEqual(self.call("POST", "backups/preview", {"data": {"format": "x"}}, tok)[0], 400)
+        self.assertEqual(self.call("POST", "backups/restore", {"name": ex["name"], "place": "chosen"}, tok)[0], 400)
+        self.assertEqual(self.call("POST", "backups/export", {}, vt)[0], 403)
+        self.call("PUT", "settings", {"backup_dir": ""}, tok)
         # static files
         with urllib.request.urlopen(self.base.replace("/api/", "/")) as r:
             self.assertIn(b"regTester", r.read())

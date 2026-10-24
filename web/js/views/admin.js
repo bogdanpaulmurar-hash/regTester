@@ -1,7 +1,9 @@
 // Administration: user access, team access, roles and page permissions, login policy, backups, audit, shutdown.
 import { renderHistory } from '../history-view.js';
 import { t } from '../i18n.js';
-import { btn, chip, clear, confirmBox, copyText, fmtDateTime, h, modal, tabs, toast } from '../util.js';
+import {
+  btn, chip, clear, confirmBox, copyText, directed, download, fmtDateTime, h, listOrder, modal, orderToggle, store, tabs, toast,
+} from '../util.js';
 
 const PAGES = ['timeline', 'coverage', 'triage', 'transcripts', 'docs', 'specs'];
 
@@ -243,17 +245,165 @@ export async function render(root, ctx) {
 
   // ------------------------------------------------------------ backups
   async function backups() {
-    const list = await ctx.api.backups();
-    body.appendChild(h('div', { class: 'toolbar' }, h('p', { class: 'hint grow', style: { margin: 0 } }, t('admin_backups_hint')),
-      btn(t('admin_backup_now'), async () => { try { const r = await ctx.api.backupNow(); toast(t('admin_backup_done', { name: r.name })); paint(); } catch (e) { toast(e.message, 'bad'); } }, { cls: 'primary', icon: 'download' })));
-    if (!list.length) { body.appendChild(h('p', { class: 'hint' }, t('admin_no_backups'))); return; }
-    body.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
-      h('thead', null, h('tr', null, [t('f_file'), t('f_date'), t('admin_size'), ''].map(x => h('th', null, x)))),
-      h('tbody', null, list.map(b => h('tr', null, h('td', { class: 'mono' }, b.name), h('td', { class: 'nowrap' }, fmtDateTime(b.ts)), h('td', { class: 'num' }, (b.size / 1024 / 1024).toFixed(1) + ' MB'),
-        h('td', null, btn(t('admin_restore'), async () => {
-          if (!(await confirmBox(t('admin_restore_q', { name: b.name }), t('admin_restore')))) return;
-          try { await ctx.api.restoreBackup(b.name); toast(t('admin_restored')); setTimeout(() => location.reload(), 800); } catch (e) { toast(e.message, 'bad'); }
-        }, { cls: 'sm' }))))))));
+    const info = await ctx.api.backups();
+    const shared = ctx.shared?.mode && ctx.shared.mode !== 'local';
+    const errText = e => e.message;
+
+    // where copies and exports go on this computer
+    const path = h('input', { type: 'text', id: 'bk-dir', value: info.backup_dir || '', placeholder: t('bk_folder_ph'), 'aria-label': t('bk_folder_title') });
+    const status = h('div', { class: 'pill-row' });
+    const showCheck = r => {
+      clear(status);
+      if (!r) return;
+      status.append(r.ok ? chip(t('bk_folder_ok'), 'ok') : chip(t('err_' + r.error), 'bad'));
+      if (r.cloud) status.append(chip(t('bk_cloud_warn', { name: r.cloud }), 'warn'));
+    };
+    const checkPath = async () => { const r = await ctx.api.backupCheck(path.value.trim()); showCheck(r); return r; };
+    const saveDir = async value => {
+      try {
+        await ctx.api.saveSettings({ backup_dir: value });
+        toast(t('saved')); paint();
+      } catch (e) { toast(errText(e), 'bad'); }
+    };
+    const team = info.places.find(p => p.place === 'team');
+    body.appendChild(h('div', { class: 'card stack' },
+      h('h2', null, t('bk_folder_title')),
+      h('p', { class: 'hint', style: { margin: 0 } }, t('bk_folder_hint'), shared ? ' ' + t('bk_folder_hint_shared') : ''),
+      h('div', { class: 'toolbar', style: { margin: 0 } }, h('div', { class: 'grow' }, path),
+        info.can_pick ? btn(t('bk_pick'), async () => {
+          try {
+            const r = await ctx.api.backupPick(path.value.trim() || team?.dir || '', t('bk_folder_title'));
+            if (r.path) { path.value = r.path; showCheck(r.check); }
+          } catch (e) { toast(errText(e), 'bad'); }
+        }, { icon: 'search' }) : null,
+        btn(t('bk_check'), () => checkPath().catch(e => toast(errText(e), 'bad'))),
+        btn(t('save'), async () => {
+          const v = path.value.trim();
+          if (v) { const r = await checkPath().catch(e => { toast(errText(e), 'bad'); return null; }); if (!r?.ok) return; }
+          saveDir(v);
+        }, { cls: 'primary' }),
+        info.backup_dir ? btn(t('bk_default'), () => saveDir(''), { cls: 'ghost' }) : null),
+      status));
+    const chosen = info.places.find(p => p.place === 'chosen');
+    if (chosen?.cloud || (!chosen && info.backup_dir === '' && team?.cloud)) showCheck({ ok: true, cloud: (chosen || team).cloud });
+
+    // full JSON export
+    const auto = h('input', { type: 'checkbox', id: 'bk-auto', checked: !!info.export_on_start });
+    const keep = h('input', { type: 'number', id: 'bk-keep', min: 1, max: 100, value: info.export_keep, style: { width: '90px' } });
+    body.appendChild(h('div', { class: 'card stack' },
+      h('h2', null, t('bk_export_title')),
+      h('p', { class: 'hint', style: { margin: 0 } }, t('bk_export_hint')),
+      h('div', { class: 'toolbar', style: { margin: 0 } },
+        btn(t('bk_export_folder'), async () => {
+          try { const r = await ctx.api.backupExport({ target: 'folder', prefs: localPrefs() }); toast(t('bk_export_done', { name: r.name })); paint(); }
+          catch (e) { toast(errText(e), 'bad'); }
+        }, { cls: 'primary', icon: 'download' }),
+        btn(t('bk_export_download'), async () => {
+          try {
+            const data = await ctx.api.backupExport({ target: 'download', prefs: localPrefs() });
+            const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
+            download(`regtester-${stamp}.json`, JSON.stringify(data, null, 1), 'application/json');
+          } catch (e) { toast(errText(e), 'bad'); }
+        }, { icon: 'download' }),
+        btn(t('bk_restore_file'), () => {
+          const input = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
+          input.addEventListener('change', async () => {
+            const f = input.files[0]; input.remove(); if (!f) return;
+            let data;
+            try { data = JSON.parse(await f.text()); } catch { toast(t('err_export_invalid'), 'bad'); return; }
+            restoreDialog({ data }, f.name);
+          });
+          document.body.appendChild(input); input.click();
+        }, { icon: 'upload' })),
+      h('div', { class: 'toolbar', style: { margin: 0 } },
+        h('label', { class: 'check' }, auto, t('bk_export_auto')),
+        h('label', { class: 'field' }, t('bk_export_keep'), keep),
+        btn(t('save'), async () => {
+          try { await ctx.api.saveSettings({ export_on_start: auto.checked, export_keep: Math.max(1, +keep.value || 10) }); toast(t('saved')); }
+          catch (e) { toast(errText(e), 'bad'); }
+        }, { cls: 'sm' }))));
+
+    // copies and exports, per place
+    const listBox = h('div', { class: 'stack' });
+    body.appendChild(h('div', { class: 'card stack' },
+      h('div', { class: 'card-head', style: { margin: 0 } }, h('h2', null, t('bk_copies_title')),
+        h('div', { class: 'toolbar', style: { margin: 0 } }, orderToggle('backups', () => paintList()),
+          btn(t('admin_backup_now'), async () => { try { const r = await ctx.api.backupNow(); toast(t('admin_backup_done', { name: r.name })); paint(); } catch (e) { toast(errText(e), 'bad'); } }, { cls: 'primary', icon: 'download' }))),
+      h('p', { class: 'hint', style: { margin: 0 } }, t('admin_backups_hint')),
+      listBox));
+    function paintList() {
+      clear(listBox);
+      for (const pl of info.places) {
+        const label = pl.place === 'chosen' ? t('bk_place_chosen') : shared ? t('bk_place_shared') : t('bk_place_team');
+        listBox.appendChild(h('h3', { style: { margin: '4px 0 0' } }, label, h('span', { class: 'small muted mono' }, ' · ', pl.dir)));
+        if (pl.error) { listBox.appendChild(chip(t('err_' + pl.error), 'bad')); continue; }
+        if (!pl.files.length) { listBox.appendChild(h('p', { class: 'hint', style: { margin: 0 } }, t('admin_no_backups'))); continue; }
+        const files = pl.files.slice().sort(directed((a, b) => a.ts - b.ts, listOrder('backups')));
+        listBox.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+          h('thead', null, h('tr', null, [t('f_file'), t('f_type'), t('f_date'), t('admin_size'), ''].map(x => h('th', null, x)))),
+          h('tbody', null, files.map(b => h('tr', null, h('td', { class: 'mono' }, b.name),
+            h('td', null, chip(t(b.kind === 'json' ? 'bk_kind_json' : 'bk_kind_db'), b.kind === 'json' ? 'info' : '')),
+            h('td', { class: 'nowrap' }, fmtDateTime(b.ts)), h('td', { class: 'num' }, (b.size / 1024 / 1024).toFixed(1) + ' MB'),
+            h('td', null, b.kind === 'json'
+              ? btn(t('bk_restore_json'), () => restoreDialog({ name: b.name, place: pl.place }, b.name), { cls: 'sm' })
+              : btn(t('admin_restore'), async () => {
+                if (!(await confirmBox(t('admin_restore_q', { name: b.name }), t('admin_restore')))) return;
+                try { await ctx.api.restoreBackup(b.name, pl.place); toast(t('admin_restored')); setTimeout(() => location.reload(), 800); } catch (e) { toast(errText(e), 'bad'); }
+              }, { cls: 'sm' }))))))));
+      }
+    }
+    paintList();
+  }
+
+  /** View preferences kept in this browser (filters, sort order, saved searches), without the sign-in token. */
+  function localPrefs() {
+    const out = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k || !k.startsWith('rt.') || k === 'rt.token') continue;
+        try { out[k.slice(3)] = JSON.parse(localStorage.getItem(k)); } catch { /* not ours */ }
+      }
+    } catch { /* storage unavailable */ }
+    return out;
+  }
+
+  /** Preview what a JSON export would change, let the admin pick the parts, then restore. */
+  async function restoreDialog(source, name) {
+    let prev;
+    try { prev = await ctx.api.backupPreview(source); } catch (e) { toast(e.message, 'bad'); return; }
+    const secs = Object.entries(prev.sections);
+    const changes = s => s.create + s.update + s.delete;
+    const boxes = Object.fromEntries(secs.map(([k, v]) => [k, h('input', { type: 'checkbox', checked: changes(v) > 0, disabled: changes(v) === 0, 'aria-label': t('sec_' + k) })]));
+    const setBox = h('input', { type: 'checkbox', checked: prev.settings.length > 0, disabled: !prev.settings.length });
+    const hasPrefs = source.data ? !!source.data.prefs : true;
+    const prefBox = h('input', { type: 'checkbox', checked: false });
+    const num = (n, kind) => h('td', { class: 'num' }, n ? chip(String(n), kind) : '0');
+    modal({
+      title: t('bk_preview_title', { name }), wide: true,
+      body: [
+        h('p', { class: 'hint' }, t('bk_preview_meta', { date: fmtDateTime(prev.exported_at), user: prev.exported_by || '—', version: prev.app_version || '—' })),
+        h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+          h('thead', null, h('tr', null, ['', t('bk_col_part'), t('bk_col_file'), t('bk_col_add'), t('bk_col_upd'), t('bk_col_del'), t('bk_col_same')].map(x => h('th', null, x)))),
+          h('tbody', null, secs.map(([k, v]) => h('tr', null, h('td', null, boxes[k]), h('td', null, t('sec_' + k)), h('td', { class: 'num' }, v.in_file),
+            num(v.create, 'ok'), num(v.update, 'info'), num(v.delete, 'bad'), h('td', { class: 'num muted' }, v.same)))))),
+        h('label', { class: 'check' }, setBox, t('bk_settings_part', { n: prev.settings.length }),
+          prev.settings.length ? h('span', { class: 'small muted' }, ' · ' + prev.settings.join(', ')) : null),
+        hasPrefs ? h('label', { class: 'check' }, prefBox, t('bk_prefs_part')) : null,
+        h('p', { class: 'hint' }, t('bk_restore_hint')),
+      ],
+      footer: c => [btn(t('cancel'), c), btn(t('bk_restore_do'), async () => {
+        const sections = secs.filter(([k]) => boxes[k].checked).map(([k]) => k);
+        const n = secs.filter(([k]) => boxes[k].checked).reduce((a, [, v]) => a + changes(v), 0) + (setBox.checked ? prev.settings.length : 0);
+        if (!n && !prefBox.checked) { toast(t('bk_nothing')); return; }
+        if (!(await confirmBox(t('bk_restore_q', { n, name }), t('admin_restore')))) return;
+        try {
+          const res = await ctx.api.restoreJson({ ...source, label: name, sections, settings: setBox.checked, prefs: prefBox.checked });
+          if (res.prefs) for (const [k, v] of Object.entries(res.prefs)) { if (k !== 'token') store(k, v); }
+          c(); toast(t('bk_restored', res)); setTimeout(() => location.reload(), 900);
+        } catch (e) { toast(e.message, 'bad'); }
+      }, { cls: 'primary' })],
+    });
   }
 
   async function audit() {

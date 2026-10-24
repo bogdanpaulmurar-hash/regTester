@@ -199,6 +199,27 @@ def main():
             page.locator(".page .btn.primary").last.click(); page.wait_for_timeout(600)
             assert page.locator("nav a[data-page=transcripts]").inner_text().strip().endswith("Demo sessions")
 
+            # backups: chosen folder, full JSON export, restore with preview
+            page.get_by_role("tab", name="Backups").click(); page.wait_for_selector("#bk-dir")
+            bkdir = data / "my backups"
+            page.fill("#bk-dir", str(bkdir)); page.get_by_role("button", name="Check").click(); page.wait_for_timeout(400)
+            assert "The folder can be written." in page.inner_text(".page"), page.inner_text(".page")[:400]
+            page.get_by_role("button", name="Save", exact=True).first.click(); page.wait_for_timeout(700)
+            page.get_by_role("button", name="Export to folder").click(); page.wait_for_timeout(900)
+            exports = list(bkdir.glob("regtester-*.json"))
+            assert len(exports) == 1, exports
+            assert "Chosen folder" in page.inner_text(".page")
+            s0 = api("records?section=specs", token)[0]
+            api(f"records/{s0['id']}", token, "PUT", {"record": {"title": "Changed after export"}, "version": s0["version"]})
+            page.get_by_role("button", name="Restore…").first.click(); page.wait_for_selector(".dialog")
+            assert "Specifications" in page.inner_text(".dialog")
+            page.get_by_role("button", name="Restore selected").click(); page.wait_for_timeout(300)
+            page.locator(".dialog").last.get_by_role("button", name="Restore", exact=True).click(); page.wait_for_timeout(2000)
+            page.wait_for_selector(".page-head")
+            s1 = next(r for r in api("records?section=specs", token) if r["id"] == s0["id"])
+            assert s1["title"] == s0["title"], (s0["title"], s1["title"])
+            assert any(h["action"] == "update" and h["record_id"] == s0["id"] for h in api("history?limit=50", token))
+
             # transcripts
             page.goto(BASE + "#transcripts"); page.wait_for_selector(".page-head")
             with page.expect_file_chooser() as fc:

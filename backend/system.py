@@ -5,11 +5,13 @@ import logging
 import logging.handlers
 import os
 import shutil
+import json
 import socket
 import sqlite3
+import subprocess
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 LOG = logging.getLogger("regtester")
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -130,18 +132,109 @@ def backup_database(db_path: Path, backup_dir: Path, keep: int = 10) -> Path:
 
 
 def list_backups(backup_dir: Path) -> list[dict]:
+    """Database copies (.db) and full exports (.json) in one folder, newest first."""
     if not backup_dir.exists():
         return []
-    return [{"name": p.name, "size": p.stat().st_size, "ts": p.stat().st_mtime}
-            for p in sorted(backup_dir.glob("regtester-*.db"), reverse=True)]
+    files = [p for p in backup_dir.glob("regtester-*") if p.suffix in (".db", ".json") and p.is_file()]
+    return [{"name": p.name, "size": p.stat().st_size, "ts": p.stat().st_mtime, "kind": p.suffix[1:]}
+            for p in sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)]
 
 
 def backup_path(name: str, backup_dir: Path) -> Path:
     """A backup file by name, refusing anything outside the backup folder."""
     src = (backup_dir / name).resolve()
-    if src.parent != backup_dir.resolve() or not src.is_file() or not src.name.startswith("regtester-"):
+    if (src.parent != backup_dir.resolve() or not src.is_file() or not src.name.startswith("regtester-")
+            or src.suffix not in (".db", ".json")):
         raise KeyError(name)
     return src
+
+
+def write_export(data: dict, backup_dir: Path, keep: int = 10) -> Path:
+    """Write a full JSON export next to the backups, keeping the newest `keep` exports."""
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    target = backup_dir / f"regtester-{time.strftime('%Y%m%d-%H%M%S')}.json"
+    tmp = target.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(target)
+    for old in sorted(backup_dir.glob("regtester-*.json"))[:-max(1, int(keep))]:
+        old.unlink(missing_ok=True)
+    LOG.info("Export written: %s", target.name)
+    return target
+
+
+# folders that a sync client copies to the internet; only a warning, the choice stays with the user
+_CLOUD_PARTS = (("onedrive", "OneDrive"), ("google drive", "Google Drive"), ("googledrive", "Google Drive"),
+                ("my drive", "Google Drive"), ("dropbox", "Dropbox"), ("icloud", "iCloud"), ("icloud drive", "iCloud"))
+
+
+def cloud_provider(path: str | Path) -> str:
+    """Name of the cloud sync service a folder seems to belong to, or ''."""
+    p = Path(path)
+    for var in ("OneDrive", "OneDriveConsumer", "OneDriveCommercial"):
+        root = os.environ.get(var)
+        if root:
+            try:
+                p.resolve().relative_to(Path(root).resolve())
+                return "OneDrive"
+            except (ValueError, OSError):
+                pass
+    text = str(path)
+    parts = PureWindowsPath(text).parts if ("\\" in text or text[1:2] == ":") else p.parts
+    for part in (x.lower() for x in parts):
+        for marker, name in _CLOUD_PARTS:
+            if part == marker or part.startswith(marker + " ") or part.startswith(marker + "-") or (marker == "onedrive" and "onedrive" in part):
+                return name
+        if part == "box":
+            return "Box"
+    return ""
+
+
+def check_backup_folder(path: str) -> dict:
+    """Can backups be written there? Creates the folder when missing. Never raises."""
+    out = {"path": str(path or ""), "ok": False, "error": "", "cloud": ""}
+    if not str(path or "").strip():
+        out["error"] = "backup_dir_empty"
+        return out
+    p = Path(str(path).strip()).expanduser()
+    out["path"] = str(p)
+    if not p.is_absolute():
+        out["error"] = "backup_dir_relative"
+        return out
+    out["cloud"] = cloud_provider(p)
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+        probe = p / f".regtester-write-test-{os.getpid()}"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        out["ok"] = True
+    except OSError as exc:
+        out["error"] = "backup_dir_not_writable"
+        LOG.warning("Backup folder %s not writable: %s", p, exc)
+    return out
+
+
+_PICK_SCRIPT = (
+    "import sys, tkinter as tk\n"
+    "from tkinter import filedialog\n"
+    "r = tk.Tk(); r.withdraw(); r.attributes('-topmost', True)\n"
+    "p = filedialog.askdirectory(initialdir=sys.argv[1] or None, title=sys.argv[2], mustexist=False)\n"
+    "sys.stdout.write(p or '')\n"
+)
+
+
+def pick_folder(initial: str = "", title: str = "regTester") -> str | None:
+    """Native folder dialog on this computer (tkinter in a separate process). '' = cancelled, None = not available."""
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        res = subprocess.run([sys.executable, "-c", _PICK_SCRIPT, initial or "", title], capture_output=True,
+                             text=True, timeout=600, creationflags=flags)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        LOG.warning("Folder dialog not available: %s", exc)
+        return None
+    if res.returncode != 0:
+        LOG.warning("Folder dialog failed: %s", res.stderr.strip()[-300:])
+        return None
+    return str(Path(res.stdout.strip())) if res.stdout.strip() else ""
 
 
 def restore_backup(name: str, db_path: Path, backup_dir: Path) -> None:

@@ -18,6 +18,7 @@ Fără tray: `python regtester.py --no-tray` (oprire cu Ctrl+C).
 | Secțiune | Ce încarci | Ce primești |
 |---|---|---|
 | **Panou release** | – | Release-ul curent (următorul PROD), pașii lui (sprinturi → MIG UAT → CORE LT → PROD), fereastra de regtest, erori deschise/noi, ce mai e de făcut, următoarele 4 săptămâni |
+| **Rapoarte** | – | Pe sprint, release, fereastră de regtest, lună sau perioadă aleasă: erori noi, apărute, încă deschise, schimbări de status, run-uri și teste picate, funcționalități (și cele fără test case), specificații, documentație; click pe un rând arată elementele din spatele cifrelor; export CSV, raport HTML, text de copiat, tipărire |
 | **Timeline** | Exportul listei Timeline din SharePoint (Excel/CSV, coloanele listei) | Gantt, Calendar, An, Listă; filtre pe release, mediu (MIG UAT / CORE LT / PROD), produs, tip; tab **Calitatea datelor** (date copiate din alt release, duplicate, sfârșit înainte de început, release/sprint greșit); **Planifică release-ul următor** (copiază un release cu decalaj în săptămâni); export în formatul SharePoint și `.ics` |
 | **Test cases & acoperire** | Exportul de test cases din toolul de regtest (lista sau arborele de categorii), release notes | Catalog pe categorii, aplicație, calitate, utilizări; matrice funcție nouă × document RegTest × test case × specificație × procedură, cu erorile deschise |
 | **Erori & run-uri** | Exportul Error Management (Excel), opțional rezultatele unui run | Erorile cu status, run-uri, responsabili; ce s-a schimbat față de exportul anterior (noi, status schimbat, mai multe run-uri, dispărute); erori apărute în fereastra de regtest; istoric pe fiecare eroare; raport de copiat |
@@ -32,6 +33,10 @@ Fiecare secțiune are tab-ul **Istoric**: fișierele importate și fiecare modif
 **Chenarele cu cifre** (de ex. „Deschise 4”, „Noi 2”, „Necategorisite”) sunt clicabile: duc la elementele respective, cu filtrul aplicat și o bandă „Filtru aplicat” care îl scoate. Click pe un rând deschide panoul lateral, unde elementul se poate edita, cu istoricul lui și săgețile ‹ › pentru a trece prin lista filtrată.
 
 **Screenshoturi în texte**: câmpurile de text lung (specificații, documentație, notițe pe erori, test cases, funcționalități, timeline, erori cunoscute) acceptă text formatat și imagini (Ctrl+V, drag & drop sau butonul de imagine). Pe elementele importate (erori, test cases, funcționalități, timeline), notițele și capturile stau în câmpul **Notițe și capturi**, care se păstrează la reimport. Imaginile se salvează o singură dată în baza de date, apar în Istoric și intră în exportul JSON.
+
+**Status propriu pe erori**: în panoul unei erori, câmpul **Status în regTester** înlocuiește statusul din export în liste, filtre, chenare și rapoarte (marcat cu ✎; statusul din export rămâne vizibil sub el). Reimportul nu îl schimbă; dacă exportul schimbă statusul după aceea, panoul arată un avertisment.
+
+**Legături între elemente**: panoul lateral (erori, test cases, funcționalități, specificații, timeline, erori cunoscute) are cardul **Legături**: legături adăugate de mână, ID-uri ale altor elemente găsite în text (de ex. codul funcției la un test case) și elementele care trimit spre acesta. Click pe o legătură arată detaliile și butonul care deschide elementul în pagina lui. Legăturile se păstrează la reimport și intră în Istoric.
 
 ### Specificație Word
 

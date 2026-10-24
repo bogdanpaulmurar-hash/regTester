@@ -30,7 +30,7 @@ PAGE_OF = {
     "known": "triage", "errors": "triage", "errsnaps": "triage", "transcripts": "transcripts", "glossary": "transcripts",
     "docs": "docs", "templates": "docs", "specs": "specs",
 }
-PAGES = ("dashboard", "timeline", "coverage", "triage", "transcripts", "docs", "specs")
+PAGES = ("dashboard", "reports", "timeline", "coverage", "triage", "transcripts", "docs", "specs")
 
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 mimetypes.add_type("text/javascript", ".js")

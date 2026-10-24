@@ -4,9 +4,11 @@ import { setLang, t } from './i18n.js';
 import { setImageApi } from './richtext.js';
 import { btn, clear, drillHash, fmtDate, h, icon, modal, store, toast } from './util.js';
 import { UI_VERSION } from './version.js';
+import { PAGE_OF_SECTION } from './links.js';
 
 const PAGES = [
   ['dashboard', 'home', () => import('./views/dashboard.js')],
+  ['reports', 'chart', () => import('./views/reports.js')],
   ['timeline', 'calendar', () => import('./views/timeline.js')],
   ['coverage', 'grid', () => import('./views/coverage.js')],
   ['triage', 'bug', () => import('./views/triage.js')],
@@ -60,6 +62,16 @@ ctx.records = async (section, force) => {
   return ctx.cache[section];
 };
 ctx.invalidate = (...sections) => { for (const s of sections) delete ctx.cache[s]; };
+// Open one record in its page: pages register ctx.openers[section] = rec => <open its panel> when they render.
+ctx.openers = {};
+ctx.openRecord = rec => {
+  const page = PAGE_OF_SECTION[rec.section] || rec.section;
+  const cur = (location.hash.replace(/^#\/?/, '') || 'dashboard').split('?')[0];
+  document.querySelectorAll('.overlay').forEach(o => o.remove());
+  if (cur === page && ctx.openers[rec.section]) { ctx.openers[rec.section](rec); return; }
+  ctx.pendingOpen = rec;
+  ctx.navigate(page);
+};
 
 let navEl, mainEl, pageEl, bandEl;
 
@@ -158,7 +170,10 @@ async function route() {
     const mod = await def[2]();
     if (my !== routeToken) return;
     clear(pageEl);
+    ctx.openers = {};
     await mod.render(pageEl, ctx, new URLSearchParams(query || ''));
+    const want = ctx.pendingOpen; ctx.pendingOpen = null;
+    if (want && my === routeToken && ctx.openers[want.section]) ctx.openers[want.section](want);
   } catch (e) {
     console.error(e);
     clear(pageEl);

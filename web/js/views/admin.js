@@ -5,7 +5,7 @@ import {
   btn, chip, clear, confirmBox, copyText, directed, download, fmtDateTime, h, listOrder, modal, orderToggle, store, tabs, toast,
 } from '../util.js';
 
-const PAGES = ['timeline', 'coverage', 'triage', 'transcripts', 'docs', 'specs'];
+const PAGES = ['reports', 'timeline', 'coverage', 'triage', 'transcripts', 'docs', 'specs'];
 
 export async function render(root, ctx) {
   if (ctx.user.role !== 'admin') { root.appendChild(h('p', null, t('admin_only'))); return; }

@@ -18,6 +18,14 @@ export const STATUSES = ['New', 'Assigned', 'Processing', 'Solved', 'Closed', 'C
 const OPEN = new Set(['new', 'assigned', 'processing', 'open', 'in progress', 'reopened']);
 export const isOpen = status => OPEN.has(String(status || '').trim().toLowerCase());
 
+/** Status that counts: the one set in regTester (data.own_status) when there is one, else the one from the export. */
+export const effStatus = r => String(r?.data?.own_status || r?.data?.status || '');
+/** The status set in regTester is older than the last status change in the export (worth a second look). */
+export const ownOutdated = r => {
+  const d = r?.data || {};
+  return !!d.own_status && !!d.own_status_at && !!d.status_since && d.status_since > d.own_status_at;
+};
+
 /** "[ 3 / 18 / 99 ]" -> [3, 18, 99]; a single number -> [0, 0, n]. */
 export function parseRuns(v) {
   const nums = String(v ?? '').match(/\d+/g)?.map(Number) || [];
@@ -115,4 +123,4 @@ export function regtestWindow(timeline, day) {
   return past.length ? { ...past[past.length - 1], current: false } : null;
 }
 
-export const matchText = (r, q) => !q || normalize(`${r.key} ${r.title} ${r.data?.type} ${r.data?.app} ${(r.data?.responsibles || []).join(' ')}`).includes(normalize(q));
+export const matchText = (r, q) => !q || normalize(`${r.key} ${r.title} ${r.data?.type} ${r.data?.app} ${effStatus(r)} ${(r.data?.responsibles || []).join(' ')}`).includes(normalize(q));

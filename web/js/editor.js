@@ -1,6 +1,7 @@
 // Side panel editor for one record, with its own history tab.
 import { renderHistory } from './history-view.js';
 import { t } from './i18n.js';
+import { leaveGuard, LINKABLE, linksBlock } from './links.js';
 import { richText, storeImages } from './richtext.js';
 import { btn, clear, confirmBox, drawer, h, tabs, toast } from './util.js';
 
@@ -8,10 +9,11 @@ const getPath = (rec, key) => key.startsWith('data.') ? rec.data?.[key.slice(5)]
 
 /**
  * opts: { ctx, section, title, record (null = new), fields: [{key, label, type, options, rows, hint, list}],
- *         defaults, onSaved(rec), readOnly, noDelete,
+ *         defaults, onSaved(rec), readOnly, noDelete, beforeSave(out, original) -> adjust the record before it is saved,
  *         info(rec) -> element above the form (e.g. read-only fields that come from an import),
  *         extra(rec) -> element below the form,
- *         nav: { list: [records], open(rec) } -> ‹ › to go through the (filtered) list the panel came from }
+ *         nav: { list: [records], open(rec) } -> ‹ › to go through the (filtered) list the panel came from,
+ *         links: false -> no links card (shown for saved records of the sections in LINKABLE) }
  * Field type 'rich': text editor with formatting and screenshots, stored as HTML.
  */
 export function openEditor(opts) {
@@ -59,6 +61,7 @@ export function openEditor(opts) {
 
   async function save(after) {
     const out = collect();
+    if (opts.beforeSave) opts.beforeSave(out, opts.record);
     if (!String(out.title || '').trim()) { toast(t('err_title_required'), 'bad'); return false; }
     try {
       for (const f of opts.fields) {
@@ -104,6 +107,7 @@ export function openEditor(opts) {
     h('span', { class: 'small muted nowrap' }, t('ed_pos', { i: pos + 1, n: list.length })),
     btn('›', () => go(1), { cls: 'sm', aria: t('ed_next'), title: t('ed_next'), disabled: pos >= list.length - 1, id: 'ed-next' })) : null;
 
+  let linksCard = null;
   const paint = () => {
     clear(body);
     if (navBar) body.appendChild(navBar);
@@ -114,6 +118,10 @@ export function openEditor(opts) {
       body.appendChild(form);
       const extra = opts.extra && opts.extra(rec);
       if (extra) body.appendChild(extra);
+      if (opts.record && opts.links !== false && LINKABLE.includes(opts.section)) {
+        if (!linksCard) linksCard = linksBlock(ctx, rec, { canWrite, guard: leaveGuard(dirty) });
+        body.appendChild(linksCard);
+      }
       if (opts.record) body.appendChild(h('div', { class: 'hint' }, t('meta_line', { v: rec.version, by: rec.updated_by || '-', at: new Date((rec.updated_at || 0) * 1000).toLocaleString(t.locale()) })));
     } else {
       const histBox = h('div');

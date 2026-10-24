@@ -250,5 +250,7 @@ export async function render(root, ctx, params) {
     });
   }
 
+  // opened from a link in another panel or page
+  ctx.openers.specs = r => edit(docs.find(d => d.r.id === r.id)?.r || r);
   await load();
 }

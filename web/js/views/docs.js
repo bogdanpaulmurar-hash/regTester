@@ -456,5 +456,11 @@ export async function render(root, ctx) {
         }, { cls: 'primary sm' })) : null);
   }
 
+  // opened from a link in another panel or page
+  ctx.openers.docs = r => {
+    const d = docs.find(x => x.id === r.id) || r;
+    if (d.data?.format === SPEC_FORMAT) { openSpec(d); st.tab = 'spec'; } else { openDoc(d); st.tab = 'write'; }
+    save(); paint();
+  };
   await load();
 }

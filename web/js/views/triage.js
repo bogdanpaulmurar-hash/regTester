@@ -1,7 +1,7 @@
 // Errors & runs: error items from the regtest tool (with changes between exports), plus run-result
 // analysis, known error patterns, trend and a copy-ready report.
 import { openEditor } from '../editor.js';
-import { diffErrors, EM_FIELDS, isOpen, matchText, regtestWindow, snapshot, toItem, toRecord, within } from '../errors.js';
+import { diffErrors, effStatus, EM_FIELDS, isOpen, ownOutdated, STATUSES, matchText, regtestWindow, snapshot, toItem, toRecord, within } from '../errors.js';
 import { historyTab } from '../history-view.js';
 import { t } from '../i18n.js';
 import { openImport } from '../importer.js';
@@ -60,6 +60,16 @@ export async function render(root, ctx, params) {
   const win = () => regtestWindow(timeline, iso(new Date()));
   const statusKind = s => (isOpen(s) ? (/^new$/i.test(s) ? 'bad' : 'warn') : /solved|closed/i.test(s) ? 'ok' : '');
 
+  // Status column: the status set in regTester wins (✎), the export status is shown under it.
+  function statusCell(r) {
+    const d = r.data || {}, s = effStatus(r);
+    return [
+      h('span', { title: d.own_status ? t('err_own_tip', { s: d.status || '—', by: d.own_status_by || '-', at: fmtDate(d.own_status_at) }) : null },
+        chip((d.own_status ? '✎ ' : '') + (s || '—'), statusKind(s))),
+      d.own_status ? h('div', { class: 'small muted' }, `${t('err_export_status')}: ${d.status || '—'}`, ownOutdated(r) ? h('span', { style: { color: 'var(--warn)' } }, ' ⚠') : null)
+        : d.prev_status && d.status_since === d.last_import ? h('div', { class: 'small muted' }, `${t('err_was')} ${d.prev_status}`) : null];
+  }
+
   function changedIds(snap) {
     if (!snap) return new Set();
     return new Set([...(snap.data.added || []), ...(snap.data.status || []).map(x => x.id), ...(snap.data.runs_up || []).map(x => x.id)]);
@@ -68,7 +78,7 @@ export async function render(root, ctx, params) {
   function errorsTab() {
     if (!errors.length) { body.appendChild(emptyState(t('err_empty'), canWrite ? btn(t('err_import'), importErrors, { icon: 'upload', cls: 'primary' }) : null)); return; }
     const snap = lastSnap(), w = win(), changed = changedIds(snap);
-    const open = errors.filter(r => isOpen(r.data?.status));
+    const open = errors.filter(r => isOpen(effStatus(r)));
     const inWin = w ? errors.filter(r => within(r.data?.last, w.s, w.e)) : [];
     const dk = (id, label, v, kind, values, enabled = true) => kpiBox(label, v, kind, enabled ? () => drill(values, id) : null, { id, active: st.drill === id });
     body.appendChild(h('div', { class: 'kpis' },
@@ -96,7 +106,7 @@ export async function render(root, ctx, params) {
     paintSort();
     body.appendChild(h('div', { class: 'toolbar' },
       h('div', { class: 'grow' }, search),
-      sel('status', t('err_all_status'), [['open', t('err_open_only')], ...uniq(r => [r.data?.status]).map(s => [s, s])]),
+      sel('status', t('err_all_status'), [['open', t('err_open_only')], ...uniq(r => [effStatus(r)]).map(s => [s, s])]),
       sel('etype', t('err_all_types'), uniq(r => [r.data?.type]).map(s => [s, s])),
       sel('app', t('err_all_apps'), uniq(r => [r.data?.app]).map(s => [s, s])),
       sel('resp', t('err_all_resp'), uniq(r => r.data?.responsibles || []).map(s => [s, s])),
@@ -113,7 +123,7 @@ export async function render(root, ctx, params) {
       : st.only === 'runs_up' ? up.has(r.key) : st.only === 'window' ? !!w && within(r.data?.last, w.s, w.e) : true);
     function visible() {
       return errors.filter(r => matchText(r, st.q)
-        && (!st.status || (st.status === 'open' ? isOpen(r.data?.status) : r.data?.status === st.status))
+        && (!st.status || (st.status === 'open' ? isOpen(effStatus(r)) : effStatus(r) === st.status))
         && (!st.etype || r.data?.type === st.etype) && (!st.app || r.data?.app === st.app)
         && (!st.resp || (r.data?.responsibles || []).includes(st.resp))
         && (!st.only || onlyMatch(r)))
@@ -134,8 +144,7 @@ export async function render(root, ctx, params) {
           return h('tr', { class: 'click', tabindex: '0', onclick: () => errorDetail(r, vis), onkeydown: e => { if (e.key === 'Enter') errorDetail(r, vis); } },
             h('td', { class: 'mono nowrap' }, r.key, (snap?.data.added || []).includes(r.key) ? h('span', null, ' ', chip(t('err_new'), 'bad')) : null),
             h('td', { style: { minWidth: '240px' } }, r.title, hasContent(d.notes) ? h('span', { class: 'small muted', title: t('f_notes_rich') }, ' 📝') : null),
-            h('td', { class: 'nowrap' }, chip(d.status || '—', statusKind(d.status)),
-              d.prev_status && d.status_since === d.last_import ? h('div', { class: 'small muted' }, `${t('err_was')} ${d.prev_status}`) : null),
+            h('td', { class: 'nowrap' }, statusCell(r)),
             h('td', { class: 'small' }, d.type || ''),
             h('td', { class: 'num nowrap', title: t('err_runs_hint') }, (d.runs || []).join(' / '), delta > 0 ? h('span', { style: { color: 'var(--bad)', fontWeight: 600 } }, ` +${delta}`) : null),
             h('td', { class: 'num' }, d.packages || ''),
@@ -166,7 +175,8 @@ export async function render(root, ctx, params) {
       return h('div', { class: 'stack' },
         h('div', { class: 'card stack' },
           h('div', { class: 'pill-row' }, chip(t('err_from_export'), 'info'), h('span', { class: 'small muted' }, t('err_from_export_hint'))),
-          h('div', { class: 'ro-grid' }, [[t('f_status'), d.status], [t('err_status_since'), fmtDate(d.status_since)], [t('f_type'), d.type], [t('err_app'), d.app],
+          ownOutdated(rec) ? h('div', { class: 'notice warn' }, t('err_own_outdated', { s: d.status, at: fmtDate(d.status_since) })) : null,
+          h('div', { class: 'ro-grid' }, [[t('err_export_status'), d.status], [t('err_status_since'), fmtDate(d.status_since)], [t('f_type'), d.type], [t('err_app'), d.app],
             [t('err_runs'), (d.runs || []).join(' / ')], [t('err_packages'), d.packages], [t('err_resp'), (d.responsibles || []).join(', ')],
             [t('err_first'), d.first ? fmtDateTime(Date.parse(d.first) / 1000) : ''], [t('err_last'), d.last ? fmtDateTime(Date.parse(d.last) / 1000) : ''],
             [t('err_first_import'), fmtDate(d.first_import)]].map(([l, v]) => h('div', null, h('div', { class: 'small muted' }, l), h('div', null, String(v ?? '') || '—')))),
@@ -178,7 +188,16 @@ export async function render(root, ctx, params) {
     };
     openEditor({
       ctx, section: 'errors', record: r, noDelete: true, title: `${r.key} · ${r.title}`,
-      fields: [{ key: 'data.notes', label: t('f_notes_rich'), type: 'rich', hint: t('err_notes_hint') }],
+      fields: [
+        { key: 'data.own_status', label: t('err_own_status'), type: 'select', hint: t('err_own_status_hint'),
+          options: [['', t('err_own_follow', { s: r.data?.status || '—' })], ...[...new Set([...STATUSES, r.data?.own_status].filter(Boolean))].map(x => [x, x])] },
+        { key: 'data.notes', label: t('f_notes_rich'), type: 'rich', hint: t('err_notes_hint') }],
+      beforeSave: (out, orig) => {
+        const before = orig?.data?.own_status || '', after = out.data.own_status || '';
+        if (before === after) return;
+        out.data.own_status_at = after ? new Date().toISOString().slice(0, 19) : '';
+        out.data.own_status_by = after ? (ctx.user?.display || ctx.user?.username || '') : '';
+      },
       info,
       nav: navList ? { list: navList, open: x => errorDetail(errors.find(e => e.id === x.id) || x, navList) } : null,
       onSaved: () => { ctx.invalidate('errors'); load(true); },
@@ -221,7 +240,7 @@ export async function render(root, ctx, params) {
 
   function errorReport(snap = lastSnap()) {
     const w = win();
-    const open = errors.filter(r => isOpen(r.data?.status));
+    const open = errors.filter(r => isOpen(effStatus(r)));
     const lines = [`${t('err_report_title')} · ${fmtDate(new Date())}`];
     if (w) lines.push(`${w.r.title}: ${fmtDate(w.s)} – ${fmtDate(w.e)}`);
     lines.push(`${t('err_k_open')}: ${open.length} / ${errors.length}`);
@@ -234,14 +253,14 @@ export async function render(root, ctx, params) {
     }
     if (w) {
       const inWin = open.filter(r => within(r.data?.last, w.s, w.e));
-      if (inWin.length) { lines.push('', t('err_open_in_window') + ':'); inWin.forEach(r => lines.push(`- ${r.key} ${r.title} [${r.data.status}]`)); }
+      if (inWin.length) { lines.push('', t('err_open_in_window') + ':'); inWin.forEach(r => lines.push(`- ${r.key} ${r.title} [${effStatus(r)}]`)); }
     }
     return lines.join('\n');
   }
 
   function exportErrors() {
     {
-      download(`errors-${iso(new Date())}.csv`, '\uFEFF' + toCsv(errors, [{ label: 'Error-ID', key: 'key' }, { label: 'Title', key: 'title' }, { label: 'Status', get: r => r.data?.status },
+      download(`errors-${iso(new Date())}.csv`, '\uFEFF' + toCsv(errors, [{ label: 'Error-ID', key: 'key' }, { label: 'Title', key: 'title' }, { label: 'Status', get: r => r.data?.status }, { label: 'Own status', get: r => r.data?.own_status || '' },
         { label: 'Type', get: r => r.data?.type }, { label: 'TestRunCount', get: r => (r.data?.runs || []).join(' / ') }, { label: 'Affected TestPackages', get: r => r.data?.packages },
         { label: 'Responsibles', get: r => (r.data?.responsibles || []).join(';') }, { label: 'First Time Stamp', get: r => r.data?.first }, { label: 'Last Time Stamp', get: r => r.data?.last },
         { label: 'Application Name', get: r => r.data?.app }, { label: 'Status since', get: r => r.data?.status_since },
@@ -408,5 +427,8 @@ export async function render(root, ctx, params) {
     });
   }
 
+  // opened from a link in another panel or page
+  ctx.openers.errors = r => { st.tab = 'errors'; save(); paint(); errorDetail(errors.find(e => e.id === r.id) || r); };
+  ctx.openers.known = r => { st.tab = 'known'; save(); paint(); editKnown(known.find(k => k.id === r.id) || r); };
   await load();
 }

@@ -109,6 +109,22 @@ class DatabaseTests(unittest.TestCase):
         self.db.import_records("errors", "e3.xlsx", [{"key": "E-1", "title": "Crash", "data": {"status": "Closed"}}], "replace", "ana")
         self.assertEqual(self.db.list_records("errors")[0]["data"]["notes"], "<p>seen on test env</p>")
 
+    def test_own_status_and_links_survive_import(self):
+        self.db.import_records("tests", "t.xlsx", [{"key": "TC-100", "title": "Login"}], "upsert", "ana")
+        tc = self.db.list_records("tests")[0]
+        self.db.import_records("errors", "e1.xlsx", [{"key": "E-1", "title": "Crash", "data": {"status": "New"}}], "upsert", "ana")
+        rec = self.db.list_records("errors")[0]
+        own = {"own_status": "Solved", "own_status_at": "2026-10-24T10:00:00", "own_status_by": "ana",
+               "rel": [{"s": "tests", "id": tc["id"], "k": "TC-100"}]}
+        self.db.update(rec["id"], {"data": {**rec["data"], **own}}, "ana", rec["version"])
+        self.db.import_records("errors", "e2.xlsx", [{"key": "E-1", "title": "Crash", "data": {"status": "Processing"}}], "upsert", "ana")
+        self.assertEqual(self.db.list_records("errors")[0]["data"], {"status": "Processing", **own})
+        self.db.import_records("errors", "e3.xlsx", [{"key": "E-1", "title": "Crash", "data": {"status": "Closed"}}], "replace", "ana")
+        self.assertEqual(self.db.list_records("errors")[0]["data"]["own_status"], "Solved")
+        # the change of the own status is in the history, with the user
+        hist = self.db.history(record_id=rec["id"])
+        self.assertTrue(any(x["action"] == "update" and x["user"] == "ana" for x in hist))
+
     def test_attachments(self):
         png = b"\x89PNG\r\n\x1a\n" + b"x" * 50
         aid = self.db.put_data_url("data:image/png;base64," + base64.b64encode(png).decode(), "ana")

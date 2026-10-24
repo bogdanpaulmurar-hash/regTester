@@ -10,7 +10,7 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - Folder comun: `python regtester.py --shared "\\server\regTester"` (`""` = înapoi la date locale) sau Administrare › Echipă
 - Date exemplu: `python tools/make_samples.py` → `sample-data/`
 - Demo fără server: `web/index.html` deschis direct
-- Versiune (acum 0.5.0): `UI_VERSION` în `web/js/version.js` = `__version__` în `backend/__init__.py`. Un modul JS nou se adaugă și în lista `SHELL` din `web/sw.js` (cu `CACHE` incrementat)
+- Versiune (acum 0.7.0): `UI_VERSION` în `web/js/version.js` = `__version__` în `backend/__init__.py`. Un modul JS nou se adaugă și în lista `SHELL` din `web/sw.js` (cu `CACHE` incrementat)
 
 ## Hartă
 - `backend/`: `server.py` (HTTP/API, `AppContext` alege unde stau datele), `db.py` (schemă, istoric, importuri), `shared.py` (folder comun: fișier de blocare, copie locală, mod citire), `auth.py` (utilizatori, roluri, sesiuni), `system.py` (log, autostart, backup), `tray.py`
@@ -26,6 +26,8 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - Folder comun: orice scriere trece prin `db.tx()`/`write_guard()` (fișierul de blocare + `BEGIN IMMEDIATE`); verificarea de versiune se face în tranzacție. Fără WAL pe share. Sesiunile nu se scriu niciodată în baza comună. Polling-ul din fundal (`GET /api/shared`) nu reînnoiește sesiunea.
 - Backup: copii `.db` (complete, cu istoric) și export `.json` (`db.export_data`/`restore_export`, fără utilizatori). Restaurarea din JSON scrie intrări normale în Istoric (create/update/delete), după o copie `.db` de siguranță. Folderul ales (`backup_dir`) e setare locală; cloud = doar avertisment.
 - Imagini din texte: tabelul `attachments` (sha256, o singură copie), referite în HTML ca `/api/att/<id>`; `<img>` primește sesiunea prin cookie-ul `rt_token` (doar `/api/att/`). Editorul e `richtext.js` (`richText`, `storeImages`, `inlineImages`); câmp `type: 'rich'` în `openEditor`. Exportul JSON are secțiunea `attachments`. `data.notes` (`KEEP_ON_IMPORT`) nu e atins de importuri. Căutare/CSV/rapoarte folosesc `plainText()`.
+- Erori: `data.own_status` (+`_at`, `_by`) = status setat în regTester; `effStatus(r)` din `errors.js` îl folosește peste cel din export peste tot (liste, filtre, KPI, rapoarte). Legături între elemente: `data.rel = [{s, id, k}]` (`links.js`), plus ID-uri găsite în text și legături inverse; în panou automat pentru secțiunile din `LINKABLE`. `own_status*` și `rel` sunt în `KEEP_ON_IMPORT`. (`data.links` la specificații e alt câmp, text liber.)
+- Deschiderea unui element din altă pagină: `ctx.openRecord(rec)`; paginile înregistrează `ctx.openers[section]` în `render`.
 - KPI-urile sunt `kpiBox()`; trimit la o pagină cu filtru prin `ctx.drill(page, {…, from})` → paginile citesc `params` (`drillFromParams`) și arată `drillBand()`.
 - Listele cronologice arată implicit cele mai noi primele, cu butonul comun `orderToggle()` din `util.js`; alegerea se ține per listă în browser (`rt.order.<listă>`), nu în baza comună.
 - Pagina „Sesiuni PO” e ascunsă implicit (poate fi redenumită/refolosită). Exportul de rezultate al run-urilor e amânat la final.

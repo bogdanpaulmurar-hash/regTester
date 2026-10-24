@@ -49,7 +49,7 @@ export function buildCoverage({ features, tests, specs, transcripts = [], errors
   const specOnly = specs.filter(s => s.kind === 'spec');
   const procs = specs.filter(s => s.kind === 'procedure');
   const regspecs = specs.filter(s => s.kind === 'regspec');
-  const openErrors = errors.filter(e => /^(new|assigned|processing|open)$/i.test(String(e.data?.status || '').trim()));
+  const openErrors = errors.filter(e => /^(new|assigned|processing|open)$/i.test(String(e.data?.own_status || e.data?.status || '').trim()));
   const sessTexts = transcripts.map(tr => ({ ...tr, _text: `${tr.title}\n${tr.data?.cleaned || tr.data?.raw || ''}\n${tr.data?.summary || ''}` }));
   return coverageRows(features, specs).map(f => {
     const ov = f.data?.overrides || {};

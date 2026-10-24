@@ -358,5 +358,8 @@ export async function render(root, ctx, params) {
       ...COLS.map(c => ({ label: c, get: r => r.status[c] })), { label: 'Open errors', get: r => r.errors.length }, { label: 'Gaps', get: r => r.gaps }]), 'text/csv');
   }
 
+  // opened from a link in another panel or page
+  ctx.openers.features = r => editFeature(data.features.find(y => y.id === r.id) || r);
+  ctx.openers.tests = r => editTest(data.tests.find(y => y.id === r.id) || r);
   await load();
 }

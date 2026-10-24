@@ -40,6 +40,7 @@ const ICONS = {
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
   calendar: 'M4 6h16v14H4zM4 10h16M8 3v5M16 3v5',
   grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+  chart: 'M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-8',
   bug: 'M8 9h8v7a4 4 0 0 1-8 0zM9 6l1.5 3M15 6l-1.5 3M4 12h4M16 12h4M5 18l3-2M19 18l-3-2',
   mic: 'M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM5 11a7 7 0 0 0 14 0M12 18v3',
   doc: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7',

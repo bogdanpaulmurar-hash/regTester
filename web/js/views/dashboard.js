@@ -1,6 +1,6 @@
 // Release cockpit: where the current release stands (sprints → MIG UAT → CORE LT → PROD), the regtest
 // window, open errors and what still needs attention.
-import { isOpen, regtestWindow, within } from '../errors.js';
+import { effStatus, isOpen, regtestWindow, within } from '../errors.js';
 import { t } from '../i18n.js';
 import { buildCoverage, coverCols } from '../match.js';
 import { checkTimeline, cmpVersion } from '../timeline-gen.js';
@@ -55,7 +55,7 @@ export async function render(root, ctx) {
 
   const snaps = snapsRaw.slice().sort((a, b) => String(b.data?.date).localeCompare(String(a.data?.date)) || b.created_at - a.created_at);
   const snap = snaps[0];
-  const open = errors.filter(r => isOpen(r.data?.status));
+  const open = errors.filter(r => isOpen(effStatus(r)));
   const inWin = win ? open.filter(r => within(r.data?.last, win.s, win.e)) : [];
   const COLS = coverCols(ctx);
   const cov = buildCoverage({ features, tests, specs, transcripts, errors, settings: ctx.settings, cols: COLS });

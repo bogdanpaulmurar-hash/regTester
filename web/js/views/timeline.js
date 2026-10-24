@@ -421,6 +421,8 @@ export async function render(root, ctx, params) {
     toast(t('exported', { n: items.length }));
   }
 
+  // opened from a link in another panel or page
+  ctx.openers.timeline = r => edit(r);
   await load();
 }
 

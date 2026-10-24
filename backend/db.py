@@ -101,8 +101,9 @@ RESTORE_FIELDS = ("kind", "key", "title", "body", "data", "tags")
 ATT_RE = re.compile(r"/api/att/([0-9a-f]{64})")
 ATT_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 ATT_MAX = 8 * 1024 * 1024
-# Notes written in regTester on imported records (errors, test cases, features): never changed by an import.
-KEEP_ON_IMPORT = ("notes",)
+# Fields written in regTester on imported records (errors, test cases, features): never changed by an import.
+# notes = notes and screenshots; own_status* = status set in regTester (errors); rel = links to other records.
+KEEP_ON_IMPORT = ("notes", "own_status", "own_status_at", "own_status_by", "rel")
 
 
 class ReadOnlyError(Exception):

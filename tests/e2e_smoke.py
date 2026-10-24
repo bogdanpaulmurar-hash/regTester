@@ -233,6 +233,42 @@ def main():
                 page.locator(".drawer .btn", has_text="Compare").nth(i).click(); page.wait_for_timeout(150)
             assert page.locator(".drawer .hist-thumbs img").count() >= 1
             page.keyboard.press("Escape")
+            # own status set in regTester wins over the export and survives the next import; links to other items
+            tc = sorted(api("records?section=tests", token), key=lambda r: r["key"])[0]
+            page.locator(".page table.t tbody tr", has_text=noted["key"]).first.click(); page.wait_for_selector("#ed-data-own_status")
+            page.select_option("#ed-data-own_status", "Cancelled")
+            page.wait_for_selector("#lnk-add"); page.click("#lnk-add"); page.wait_for_selector("#lnk-q")
+            page.fill("#lnk-q", tc["key"]); page.wait_for_timeout(200)
+            page.locator(".dialog .lnk-open", has_text=tc["key"]).first.click(); page.wait_for_timeout(200)
+            assert tc["key"] in page.inner_text("#lnk-card")
+            page.click("#ed-save"); page.wait_for_timeout(600)
+            own = next(e for e in api("records?section=errors", token) if e["id"] == noted["id"])
+            assert own["data"]["own_status"] == "Cancelled" and own["data"]["own_status_by"] and own["data"]["rel"][0]["id"] == tc["id"], own["data"]
+            upload("Import Error Management", "error_management_export_2.xlsx")
+            own2 = next(e for e in api("records?section=errors", token) if e["id"] == noted["id"])
+            assert own2["data"]["own_status"] == "Cancelled" and own2["data"]["rel"] == own["data"]["rel"], own2["data"]
+            page.get_by_role("tab", name="Error items").click(); page.wait_for_timeout(300)
+            # counted by the own status: not open any more, found with the status filter
+            page.select_option(".page select[aria-label='All statuses']", "Cancelled"); page.wait_for_timeout(300)
+            assert "✎ Cancelled" in page.inner_text(".page table.t") and noted["key"] in page.inner_text(".page table.t")
+            # the test case shows the error as a backlink; the preview opens it in its own page
+            page.locator(".page table.t tbody tr", has_text=noted["key"]).first.click(); page.wait_for_selector("#lnk-card .lnk-open")
+            page.locator("#lnk-card .lnk-open", has_text=tc["key"]).first.click(); page.wait_for_selector("#lnk-go")
+            page.click("#lnk-go"); page.wait_for_selector(".drawer #lnk-card .lnk-open", timeout=8000)
+            assert "#coverage" in page.url and tc["title"] in page.inner_text(".drawer header h2"), page.url
+            assert noted["key"] in page.inner_text(".drawer #lnk-card")
+            page.keyboard.press("Escape")
+            # reports per sprint / release / month, with the elements behind each number
+            page.goto(BASE + "#reports"); page.wait_for_selector(".page-head")
+            for g in ["Release", "Month", "Sprint"]:
+                page.locator(".page .seg button", has_text=g).first.click(); page.wait_for_timeout(300)
+                assert page.locator(".page > .card > pre.pre").count() == 0
+            if page.locator("#rep-overview tbody tr").count():
+                page.locator("#rep-overview tbody tr").last.click(); page.wait_for_selector("#rep-detail")
+            page.locator(".page .seg button", has_text="Month").first.click(); page.wait_for_selector("#rep-overview")
+            assert "2026" in page.inner_text("#rep-overview"); page.locator("#rep-overview tbody tr").first.click(); page.wait_for_selector("#rep-detail")
+            if page.locator("#rep-detail .lnk-open").count():
+                page.locator("#rep-detail .lnk-open").first.click(); page.wait_for_selector("#lnk-go"); page.keyboard.press("Escape")
             # dashboard → catalogue (uncategorised), timeline quality
             page.goto(BASE + "#dashboard"); page.wait_for_selector("[data-kpi=cat_k_uncat]")
             page.click("[data-kpi=cat_k_uncat]"); page.wait_for_selector("#drill-band")
@@ -317,12 +353,12 @@ def main():
             for lang in ["ro", "de", "en"]:
                 page.evaluate(f"localStorage.setItem('rt.lang', JSON.stringify('{lang}'))")
                 page.reload(); page.wait_for_selector(".page-head", timeout=8000)
-                for pg in ["dashboard", "timeline", "coverage", "triage", "transcripts", "docs", "specs", "history", "logs", "settings", "admin"]:
+                for pg in ["dashboard", "reports", "timeline", "coverage", "triage", "transcripts", "docs", "specs", "history", "logs", "settings", "admin"]:
                     page.evaluate(f"location.hash = '{pg}'"); page.wait_for_timeout(600); page.wait_for_selector(".page-head", timeout=8000)
                     assert page.locator(".page > .card > pre.pre").count() == 0, f"{lang}/{pg}: " + page.inner_text(".page")[:300]
             # every newest/oldest switch on every tab works (JavaScript errors are collected above)
             toggles = 0
-            for pg in ["timeline", "coverage", "triage", "transcripts", "docs", "specs", "history", "logs"]:
+            for pg in ["reports", "timeline", "coverage", "triage", "transcripts", "docs", "specs", "history", "logs"]:
                 page.evaluate(f"location.hash = '{pg}'"); page.wait_for_timeout(500); page.wait_for_selector(".page-head")
                 for i in range(page.locator(".page [role=tab]").count()):
                     page.locator(".page [role=tab]").nth(i).click(); page.wait_for_timeout(250)
@@ -375,13 +411,18 @@ def main():
                 args.shots.mkdir(parents=True, exist_ok=True)
                 page.evaluate("localStorage.setItem('rt.lang', JSON.stringify('ro'))")
                 page.reload(); page.wait_for_timeout(500)
-                for pg in ["dashboard", "timeline", "coverage", "triage", "specs"]:
+                for pg in ["dashboard", "reports", "timeline", "coverage", "triage", "specs"]:
                     page.evaluate(f"location.hash = '{pg}'"); page.wait_for_timeout(900)
-                    page.screenshot(path=str(args.shots / f"desk-{pg}.png"))
+                    page.screenshot(path=str(args.shots / f"desk-{pg}.png"), full_page=pg == "reports")
+                page.evaluate("location.hash = 'triage'"); page.wait_for_timeout(900)
+                page.locator(".page [role=tab]").first.click(); page.wait_for_timeout(400)
+                page.locator(".page table.t tbody tr").first.click(); page.wait_for_selector("#lnk-card"); page.wait_for_timeout(500)
+                page.screenshot(path=str(args.shots / "desk-error-panel.png"))
+                page.keyboard.press("Escape")
                 m = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=2)
                 m.goto(BASE); m.evaluate(f"localStorage.setItem('rt.token', JSON.stringify('{token}'))")
                 m.reload(); m.wait_for_timeout(600)
-                for pg in ["dashboard", "timeline", "specs"]:
+                for pg in ["dashboard", "reports", "timeline", "specs"]:
                     m.evaluate(f"location.hash = '{pg}'"); m.wait_for_timeout(900)
                     m.screenshot(path=str(args.shots / f"phone-{pg}.png"))
             browser.close()

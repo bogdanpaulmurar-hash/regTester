@@ -2,7 +2,7 @@
 // Syntax: words (all must match) · "exact phrase" · -exclude · a OR b · prefix* · fuzzy~
 //         field:value  (type, status, module, release, tag, key, title, body, by)
 //         updated>2026-01-01  created<2026-06-30
-import { normalize, tokens } from './util.js';
+import { normalize, plainText, tokens } from './util.js';
 
 const FIELD_ALIAS = { type: 'kind', kind: 'kind', typ: 'kind', tip: 'kind', status: 'status', stare: 'status', module: 'module', modul: 'module',
   release: 'release', tag: 'tag', tags: 'tag', key: 'key', id: 'key', title: 'title', titel: 'title', body: 'body', text: 'body', by: 'by', author: 'by',
@@ -54,11 +54,11 @@ function lev(a, b, max) {
 export function indexDoc(r) {
   const d = r.data || {};
   const f = {
-    key: normalize(r.key), title: normalize(r.title), body: normalize(r.body), tag: normalize((r.tags || []).join(' ')),
+    key: normalize(r.key), title: normalize(r.title), body: normalize(plainText(r.body)), tag: normalize((r.tags || []).join(' ')),
     kind: normalize(r.kind), status: normalize(d.status), module: normalize(d.module), release: normalize(d.release),
     by: normalize(`${r.created_by} ${r.updated_by}`), extra: normalize(Object.entries(d).filter(([k]) => !['status', 'module', 'release'].includes(k)).map(([, v]) => typeof v === 'string' ? v : '').join(' ')),
   };
-  return { r, f, words: new Set(tokens(`${r.key} ${r.title} ${r.body} ${(r.tags || []).join(' ')}`)) };
+  return { r, f, words: new Set(tokens(`${r.key} ${r.title} ${plainText(r.body)} ${(r.tags || []).join(' ')}`)) };
 }
 
 const WEIGHT = { key: 6, title: 5, tag: 3, module: 2, release: 2, status: 2, kind: 2, body: 1, extra: 1, by: 1 };

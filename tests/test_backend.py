@@ -1,6 +1,7 @@
 """Backend tests: python -m unittest discover -s tests"""
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 import sys
@@ -97,6 +98,48 @@ class DatabaseTests(unittest.TestCase):
             self.db.restore_preview({"format": "something else"})
         with self.assertRaises(ValueError):
             self.db.restore_preview({**data, "version": 99})
+
+    def test_notes_survive_import(self):
+        self.db.import_records("errors", "e1.xlsx", [{"key": "E-1", "title": "Crash", "data": {"status": "New"}}], "upsert", "ana")
+        rec = self.db.list_records("errors")[0]
+        self.db.update(rec["id"], {"data": {**rec["data"], "notes": "<p>seen on test env</p>"}}, "ana", rec["version"])
+        self.db.import_records("errors", "e2.xlsx", [{"key": "E-1", "title": "Crash", "data": {"status": "Solved"}}], "upsert", "ana")
+        rec = self.db.list_records("errors")[0]
+        self.assertEqual(rec["data"], {"status": "Solved", "notes": "<p>seen on test env</p>"})
+        self.db.import_records("errors", "e3.xlsx", [{"key": "E-1", "title": "Crash", "data": {"status": "Closed"}}], "replace", "ana")
+        self.assertEqual(self.db.list_records("errors")[0]["data"]["notes"], "<p>seen on test env</p>")
+
+    def test_attachments(self):
+        png = b"\x89PNG\r\n\x1a\n" + b"x" * 50
+        aid = self.db.put_data_url("data:image/png;base64," + base64.b64encode(png).decode(), "ana")
+        self.assertEqual(self.db.put_attachment(png, "image/png", "ion"), aid)  # stored once
+        self.assertEqual(self.db.get_attachment(aid), ("image/png", png))
+        with self.assertRaises(ValueError):
+            self.db.put_attachment(b"<svg/>", "image/svg+xml", "ana")
+        r = self.db.create("specs", {"title": "With image", "body": f'<p>see <img src="/api/att/{aid}"></p>'}, "ana")
+        # removed from the text, but still in the history: kept
+        self.db.update(r["id"], {"body": "<p>no image</p>"}, "ana")
+        self.assertEqual(self.db.attachment_stats()["unused"], 0)
+        self.assertEqual(self.db.cleanup_attachments("admin")["removed"], 0)
+        orphan = self.db.put_attachment(b"GIF89a" + b"y" * 10, "image/gif", "ana")
+        self.assertEqual(self.db.cleanup_attachments("admin"), {"removed": 1, "bytes": 16})
+        with self.assertRaises(KeyError):
+            self.db.get_attachment(orphan)
+        # export carries the images used by records; restore into an empty database brings them back
+        self.db.update(r["id"], {"body": f'<img src="/api/att/{aid}">'}, "ana")
+        data = self.db.export_data("ana", "test")
+        self.assertEqual(list(data["attachments"]), [aid])
+        other = Database(self.dir / "other.db")
+        try:
+            self.assertEqual(other.restore_preview(data)["images"], 1)
+            res = other.restore_export(data, ["specs"], False, "ana", "export.json")
+            self.assertEqual((res["created"], res["images"]), (1, 1))
+            self.assertEqual(other.get_attachment(aid)[1], png)
+            bad = json.loads(json.dumps(data))
+            bad["attachments"][aid]["data"] = base64.b64encode(b"tampered").decode()
+            self.assertEqual(Database._file_attachments(bad), {})
+        finally:
+            other.close()
 
     def test_backup_folder_checks(self):
         from backend import system
@@ -243,6 +286,21 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.call("POST", "backups/restore", {"name": ex["name"], "place": "chosen"}, tok)[0], 400)
         self.assertEqual(self.call("POST", "backups/export", {}, vt)[0], 403)
         self.call("PUT", "settings", {"backup_dir": ""}, tok)
+        # images: upload, read with the header or the cookie, not without a login
+        png = b"\x89PNG\r\n\x1a\n" + b"api" * 20
+        st, att = self.call("POST", "att", {"data_url": "data:image/png;base64," + base64.b64encode(png).decode()}, tok)
+        self.assertEqual(st, 201)
+        self.assertEqual(self.call("POST", "att", {"data_url": "data:image/png;base64,AAAA"}, vt)[0], 403)
+        url = self.base.replace("/api/", "") + att["url"]
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            urllib.request.urlopen(url)
+        self.assertEqual(cm.exception.code, 401)
+        req = urllib.request.Request(url, headers={"Cookie": "rt_token=" + vt})
+        with urllib.request.urlopen(req) as r:
+            self.assertEqual((r.headers["Content-Type"], r.read()), ("image/png", png))
+        self.assertEqual(self.call("GET", "att/stats", token=tok)[1]["unused"], 1)
+        self.assertEqual(self.call("POST", "att/cleanup", {}, vt)[0], 403)
+        self.assertEqual(self.call("POST", "att/cleanup", {}, tok)[1]["removed"], 1)
         # static files
         with urllib.request.urlopen(self.base.replace("/api/", "/")) as r:
             self.assertIn(b"regTester", r.read())

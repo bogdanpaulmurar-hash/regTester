@@ -81,7 +81,7 @@ export function icon(name) {
 }
 
 export function btn(label, onClick, opts = {}) {
-  return h('button', { type: 'button', class: 'btn ' + (opts.cls || ''), onclick: onClick, title: opts.title, 'aria-label': opts.aria, disabled: opts.disabled },
+  return h('button', { type: 'button', class: 'btn ' + (opts.cls || ''), onclick: onClick, title: opts.title, 'aria-label': opts.aria, disabled: opts.disabled, id: opts.id },
     opts.icon ? icon(opts.icon) : null, label);
 }
 
@@ -318,4 +318,81 @@ export function snippet(text, terms, len = 220) {
   if (best === -1) return s.slice(0, len) + '…';
   const start = Math.max(0, best - 60);
   return (start ? '…' : '') + s.slice(start, start + len) + (start + len < s.length ? '…' : '');
+}
+
+// ------------------------------------------------------------ rich text helpers
+// Text fields can hold HTML (with screenshots) or, for older records, plain text.
+const HTML_RE = /<\/?(p|br|b|i|u|ul|ol|li|img|span|div|table|tr|td|a|strong|em)\b[^>]*>/i;
+export function isHtml(s) { return typeof s === 'string' && HTML_RE.test(s); }
+
+/** Plain text of a field (HTML or text): for search, CSV, reports and snippets. */
+export function plainText(s) {
+  if (!isHtml(s)) return String(s ?? '');
+  const doc = new DOMParser().parseFromString(`<div>${s}</div>`, 'text/html');
+  const root = doc.body.firstChild;
+  root.querySelectorAll('br').forEach(b => b.replaceWith('\n'));
+  root.querySelectorAll('p, li, div, tr, h1, h2, h3').forEach(b => b.append('\n'));
+  return root.textContent.replace(/\u00a0/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Old plain text shown in the rich editor: paragraphs and line breaks kept, or a numbered list. */
+export function textToHtml(s, asList) {
+  const v = String(s ?? '');
+  if (!v.trim() || isHtml(v)) return v;
+  if (asList) {
+    const items = v.split('\n').map(x => x.replace(/^\s*(\d+[.)]|[-*•])\s*/, '').trim()).filter(Boolean);
+    return `<ol>${items.map(x => `<li>${esc(x)}</li>`).join('')}</ol>`;
+  }
+  return v.split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
+}
+
+/** Ids of the stored images a text refers to (/api/att/<id>). */
+export function attRefs(s) { return [...new Set(String(s ?? '').match(/\/api\/att\/[0-9a-f]{64}/g) || [])].map(x => x.slice(9)); }
+/** True when a field has text or at least one image. */
+export function hasContent(s) { return !!plainText(s).trim() || /<img\b/i.test(String(s ?? '')); }
+
+// --------------------------------------------------------------- KPI boxes
+/** A KPI box; with onClick it is a button that leads to the elements behind the number. */
+export function kpiBox(label, value, kind, onClick, opts = {}) {
+  const inner = [h('div', { class: 'l' }, label), h('div', { class: 'v' }, value)];
+  if (!onClick) return h('div', { class: 'kpi ' + (kind || '') }, inner);
+  return h('button', { type: 'button', class: `kpi click ${kind || ''}${opts.active ? ' on' : ''}`, onclick: onClick, title: opts.title || t('kpi_open'),
+    'aria-pressed': opts.active === undefined ? null : String(!!opts.active), 'data-kpi': opts.id }, inner);
+}
+
+/** Notice above a list opened from a KPI: which filter is applied, with a button to show everything. */
+export function drillBand(label, onClear) {
+  return h('div', { class: 'drill-band', role: 'status', id: 'drill-band' }, h('span', { class: 'small muted' }, t('drill_applied')), h('b', null, label),
+    h('span', { class: 'sp' }), btn(t('drill_clear'), onClear, { cls: 'sm ghost', icon: 'x', id: 'drill-clear' }));
+}
+
+/** Link to a page with a filter (read by the page from the URL): #page?a=1&from=<i18n key of the KPI>. */
+export function drillHash(page, params) {
+  const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+  return '#' + page + (q.toString() ? '?' + q : '');
+}
+/** Removes the filter from the URL without reloading the page. */
+export function dropDrill() { const page = location.hash.replace(/^#\/?/, '').split('?')[0]; history.replaceState(null, '', '#' + page); }
+
+/**
+ * Filters opened from a KPI, kept in the page state `st`: the filters the user had are remembered and come back
+ * when the notice is closed. `keys` are the filter fields of the list, `defaults` their neutral values.
+ */
+export function drillApply(st, keys, defaults, values, from) {
+  if (!st.drill) st.preDrill = Object.fromEntries(keys.map(k => [k, st[k]]));
+  for (const k of keys) st[k] = values[k] !== undefined ? values[k] : defaults[k];
+  st.drill = from;
+}
+export function drillFromParams(st, keys, defaults, params, extra = []) {
+  if (!params?.get('from')) return false;
+  const values = {};
+  for (const k of [...keys, ...extra]) if (params.has(k)) values[k] = params.get(k);
+  drillApply(st, keys, defaults, values, params.get('from'));
+  for (const k of extra) if (params.has(k)) st[k] = params.get(k);
+  dropDrill();
+  return true;
+}
+export function drillClear(st) {
+  if (st.preDrill) Object.assign(st, st.preDrill);
+  delete st.preDrill; st.drill = null;
 }

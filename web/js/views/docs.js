@@ -3,10 +3,11 @@ import { DEFAULT_TEMPLATE } from '../demo.js';
 import { buildSpecDocx, countImages, defaultSections, importSpecDocx, newSpec, SPEC_FORMAT, specFileName, specText, structureOf } from '../docx-spec.js';
 import { historyTab } from '../history-view.js';
 import { LANGS, t, tIn } from '../i18n.js';
-import { richText } from '../richtext.js';
+import { inlineImages, richText, storeImages } from '../richtext.js';
 import { pickFile } from '../importer.js';
 import {
-  btn, chip, clear, confirmBox, copyText, directed, download, emptyState, esc, fmtDateTime, h, listOrder, normalize, orderToggle, similarity, store, tabs, toast,
+  btn, chip, clear, confirmBox, copyText, directed, download, emptyState, esc, fmtDateTime, h, hasContent, isHtml, listOrder, normalize, orderToggle, plainText, similarity,
+  store, tabs, toast,
 } from '../util.js';
 
 function localizedDefault() {
@@ -68,7 +69,7 @@ export async function render(root, ctx) {
     else writeView();
   }
 
-  function missing() { return (tpl()?.data?.sections || []).filter(s => s.required && !String(work.values[s.id] || '').trim()); }
+  function missing() { return (tpl()?.data?.sections || []).filter(s => s.required && !hasContent(work.values[s.id])); }
 
   // ------------------------------------------------------------ write
   function writeView() {
@@ -81,9 +82,15 @@ export async function render(root, ctx) {
       i.addEventListener('input', () => { work.meta[k] = i.value; update(); });
       return h('label', { class: 'field', for: 'doc-' + k }, label, i);
     };
+    // one-line fields stay plain text; long text and lists get the editor with formatting and screenshots
     const secInputs = T.data.sections.map(s => {
       const id = 'doc-s-' + s.id;
-      const el = s.type === 'text' ? h('input', { type: 'text', id, value: work.values[s.id] || '' }) : h('textarea', { id, rows: s.type === 'list' ? 5 : 3, value: work.values[s.id] || '' });
+      if (s.type !== 'text') {
+        const rt = richText({ html: work.values[s.id] || '', id, label: s.label, list: s.type === 'list', compact: true, noHint: true,
+          onChange: v => { work.values[s.id] = v; update(); } });
+        return h('div', { class: 'field' }, h('span', null, s.label + (s.required ? ' *' : '')), rt, s.hint ? h('span', { class: 'hint' }, s.hint) : null);
+      }
+      const el = h('input', { type: 'text', id, value: work.values[s.id] || '' });
       el.addEventListener('input', () => { work.values[s.id] = el.value; update(); });
       return h('label', { class: 'field', for: id }, s.label + (s.required ? ' *' : ''), el, s.hint ? h('span', { class: 'hint' }, s.hint) : null);
     });
@@ -106,9 +113,9 @@ export async function render(root, ctx) {
         h('div', { class: 'card-head' }, h('span', { class: 'hint' }, t('docs_preview_of', { name: T.title })), issues),
         preview,
         h('div', { class: 'actions' },
-          btn(t('docs_copy_onenote'), () => copyText(asText(), asHtml()), { cls: 'primary', icon: 'copy' }),
+          btn(t('docs_copy_onenote'), async () => copyText(asText(), await inlineImages(asHtml())), { cls: 'primary', icon: 'copy' }),
           btn(t('docs_copy_tool'), () => copyText(asText()), { icon: 'copy' }),
-          btn('.html', () => download(fileName('html'), `<!doctype html><meta charset="utf-8"><title>${esc(work.meta.title)}</title>${asHtml()}`, 'text/html'), { icon: 'download', cls: 'sm' }),
+          btn('.html', async () => download(fileName('html'), `<!doctype html><meta charset="utf-8"><title>${esc(work.meta.title)}</title>${await inlineImages(asHtml())}`, 'text/html'), { icon: 'download', cls: 'sm' }),
           btn('.md', () => download(fileName('md'), asMarkdown(), 'text/markdown'), { icon: 'download', cls: 'sm' }),
           canWrite ? btn(work.id ? t('trs_update') : t('save'), saveDoc, { icon: 'doc' }) : null)));
     body.appendChild(h('div', { class: 'row' }, form, side));
@@ -122,7 +129,7 @@ export async function render(root, ctx) {
   }
 
   const fileName = ext => `${(work.meta.code ? work.meta.code + '-' : '') + (work.meta.title || 'document')}`.replace(/[^\p{L}\p{N}_-]+/gu, '_') + '.' + ext;
-  const lines = v => String(v || '').split('\n').map(x => x.replace(/^\s*(\d+[.)]|[-*•])\s*/, '').trim()).filter(Boolean);
+  const lines = v => plainText(v).split('\n').map(x => x.replace(/^\s*(\d+[.)]|[-*•])\s*/, '').trim()).filter(Boolean);
 
   function metaLine() { return [work.meta.code, work.meta.module, work.meta.sprint, work.meta.release].filter(Boolean).join(' · '); }
 
@@ -133,7 +140,8 @@ export async function render(root, ctx) {
     T.data.sections.forEach((s, i) => {
       const v = work.values[s.id];
       out += `<h3>${i + 1}. ${esc(s.label)}</h3>`;
-      if (!String(v || '').trim()) out += forPreview ? `<p class="missing">[${esc(t('docs_to_fill'))}]</p>` : '<p></p>';
+      if (!hasContent(v)) out += forPreview ? `<p class="missing">[${esc(t('docs_to_fill'))}]</p>` : '<p></p>';
+      else if (isHtml(v)) out += v;
       else if (s.type === 'list') out += `<ol>${lines(v).map(x => `<li>${esc(x)}</li>`).join('')}</ol>`;
       else out += String(v).split(/\n{2,}/).map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
     });
@@ -145,7 +153,7 @@ export async function render(root, ctx) {
     T.data.sections.forEach((s, i) => {
       out.push(`${i + 1}. ${s.label}`);
       if (s.type === 'list') lines(work.values[s.id]).forEach((x, j) => out.push(`   ${j + 1}) ${x}`));
-      else out.push(String(work.values[s.id] || '').trim());
+      else out.push(plainText(work.values[s.id]).trim());
       out.push('');
     });
     return out.join('\n').trim();
@@ -156,7 +164,7 @@ export async function render(root, ctx) {
     T.data.sections.forEach((s, i) => {
       out.push(`## ${i + 1}. ${s.label}`, '');
       if (s.type === 'list') lines(work.values[s.id]).forEach((x, j) => out.push(`${j + 1}. ${x}`));
-      else out.push(String(work.values[s.id] || ''));
+      else out.push(plainText(work.values[s.id]));
       out.push('');
     });
     return out.join('\n');
@@ -173,7 +181,7 @@ export async function render(root, ctx) {
       if (cur && line.trim()) parts[cur] = (parts[cur] ? parts[cur] + '\n' : '') + line.trim();
     }
     let n = 0;
-    for (const [k, v] of Object.entries(parts)) if (v && !String(work.values[k] || '').trim()) { work.values[k] = v; n++; }
+    for (const [k, v] of Object.entries(parts)) if (v && !hasContent(work.values[k])) { work.values[k] = v; n++; }
     toast(t('docs_autofilled', { n }));
   }
 
@@ -201,6 +209,7 @@ export async function render(root, ctx) {
 
   async function saveDoc() {
     if (!work.meta.title.trim()) { toast(t('err_title_required'), 'bad'); return; }
+    try { for (const k of Object.keys(work.values)) work.values[k] = await storeImages(work.values[k]); } catch (e) { toast(e.message, 'bad'); return; }
     const record = { kind: 'doc', key: work.meta.code, title: work.meta.title.trim(),
       body: asText(), data: { templateId: work.templateId, meta: work.meta, values: work.values, complete: !missing().length, source: work.source } };
     try {
@@ -362,6 +371,8 @@ export async function render(root, ctx) {
     const sp = sw.spec;
     if (!String(sp.title || '').trim()) { toast(t('err_title_required'), 'bad'); return; }
     if (!sp.story) sp.story = (/\b([A-Z]{2,6}-\d{2,7})\b/.exec(sp.title) || [])[1] || '';
+    // screenshots still kept inside the text (older specifications, imported .docx) move to the image store
+    try { for (const s of sp.sections) s.html = await storeImages(s.html); } catch (e) { toast(e.message, 'bad'); return; }
     const record = { kind: 'spec-doc', key: sp.story || '', title: sp.title.trim(), body: specText(sp), data: { ...structuredClone(sp), format: SPEC_FORMAT, images: countImages(sp) } };
     try {
       const saved = sw.id ? await ctx.api.update(sw.id, record, sw.version) : await ctx.api.create('docs', record);

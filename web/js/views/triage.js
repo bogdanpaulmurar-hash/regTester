@@ -7,17 +7,25 @@ import { t } from '../i18n.js';
 import { openImport } from '../importer.js';
 import { analyse, statusOf } from '../triage.js';
 import {
-  btn, chip, clear, confirmBox, copyText, directed, download, emptyState, fmtDate, fmtDateTime, h, iso, listOrder, modal, orderToggle, seg, store, tabs, toast,
-  toCsv, toIsoDate,
+  btn, chip, clear, confirmBox, copyText, directed, download, drillApply, drillBand, drillClear, drillFromParams, emptyState, fmtDate, fmtDateTime, h, hasContent, iso,
+  kpiBox, listOrder, modal, orderToggle, plainText, seg, store, tabs, toast, toCsv, toIsoDate,
 } from '../util.js';
 
 const TYPE_KIND = { new: 'bad', recurring: 'warn', flaky: 'info', known: '' };
 
-export async function render(root, ctx) {
+// filters of the error list; a KPI sets them (drill) and the notice above the list gives the old ones back
+const FKEYS = ['q', 'status', 'etype', 'app', 'resp', 'only'];
+const FDEF = { q: '', status: '', etype: '', app: '', resp: '', only: '' };
+
+export async function render(root, ctx, params) {
   const st = Object.assign({ tab: 'errors', type: 'all', cur: '', prev: '', q: '', status: 'open', etype: '', app: '', resp: '', only: '', sort: 'last', snap: '' }, store('tri') || {});
   if (st.tab === 'analysis' && !store('tri.v2')) st.tab = 'errors';
   store('tri.v2', true);
   const save = () => store('tri', st);
+  // opened from a KPI elsewhere (dashboard): #triage?tab=errors&status=open&only=window&from=<kpi>
+  if (drillFromParams(st, FKEYS, FDEF, params, ['tab'])) save();
+  const drill = (values, from) => { drillApply(st, FKEYS, FDEF, values, from); st.tab = 'errors'; save(); paint(); };
+  const undrill = () => { if (st.drill) { st.drill = null; delete st.preDrill; } };
   const canWrite = ctx.canWriteSection('runs');
   let runs = [], known = [], errors = [], snaps = [], timeline = [];
 
@@ -62,19 +70,22 @@ export async function render(root, ctx) {
     const snap = lastSnap(), w = win(), changed = changedIds(snap);
     const open = errors.filter(r => isOpen(r.data?.status));
     const inWin = w ? errors.filter(r => within(r.data?.last, w.s, w.e)) : [];
+    const dk = (id, label, v, kind, values, enabled = true) => kpiBox(label, v, kind, enabled ? () => drill(values, id) : null, { id, active: st.drill === id });
     body.appendChild(h('div', { class: 'kpis' },
-      kpi(t('err_k_total'), errors.length), kpi(t('err_k_open'), open.length, open.length ? 'warn' : 'ok'),
-      kpi(t('err_k_new'), snap ? (snap.data.added || []).length : '—', snap?.data.added?.length ? 'bad' : ''),
-      kpi(t('err_k_status'), snap ? (snap.data.status || []).length : '—', snap?.data.status?.length ? 'info' : ''),
-      kpi(t('err_k_runs_up'), snap ? (snap.data.runs_up || []).length : '—', snap?.data.runs_up?.length ? 'warn' : ''),
-      kpi(t('err_k_window'), w ? inWin.length : '—', inWin.length ? 'warn' : '')));
+      dk('err_k_total', t('err_k_total'), errors.length, '', {}),
+      dk('err_k_open', t('err_k_open'), open.length, open.length ? 'warn' : 'ok', { status: 'open' }),
+      dk('err_k_new', t('err_k_new'), snap ? (snap.data.added || []).length : '—', snap?.data.added?.length ? 'bad' : '', { only: 'added' }, !!snap),
+      dk('err_k_status', t('err_k_status'), snap ? (snap.data.status || []).length : '—', snap?.data.status?.length ? 'info' : '', { only: 'status' }, !!snap),
+      dk('err_k_runs_up', t('err_k_runs_up'), snap ? (snap.data.runs_up || []).length : '—', snap?.data.runs_up?.length ? 'warn' : '', { only: 'runs_up' }, !!snap),
+      dk('err_k_window', t('err_k_window'), w ? inWin.length : '—', inWin.length ? 'warn' : '', { only: 'window' }, !!w)));
+    if (st.drill) body.appendChild(drillBand(t(st.drill) + (st.q ? ` · ${st.q}` : ''), () => { drillClear(st); save(); paint(); }));
     body.appendChild(h('p', { class: 'hint', style: { margin: 0 } },
       snap ? t('err_last_import', { file: snap.data.file, at: fmtDate(snap.data.date) }) : '',
       w ? ' · ' + t(w.current ? 'err_window_now' : 'err_window_last', { title: w.r.title, from: fmtDate(w.s), to: fmtDate(w.e) }) : ' · ' + t('err_window_none')));
     const uniq = f => [...new Set(errors.flatMap(f).filter(Boolean))].sort();
     const search = h('input', { type: 'search', value: st.q, placeholder: t('err_search'), 'aria-label': t('err_search') });
-    search.addEventListener('input', () => { st.q = search.value; save(); paintTable(); });
-    const sel = (key, label, opts) => h('select', { 'aria-label': label, onchange: e => { st[key] = e.target.value; save(); paintTable(); } },
+    search.addEventListener('input', () => { st.q = search.value; if (st.drill) { undrill(); save(); paint(); search.focus(); return; } save(); paintTable(); });
+    const sel = (key, label, opts) => h('select', { 'aria-label': label, onchange: e => { st[key] = e.target.value; const had = st.drill; undrill(); save(); if (had) paint(); else paintTable(); } },
       h('option', { value: '' }, label), opts.map(([v, l]) => h('option', { value: v, selected: st[key] === v }, l)));
     // Sort field; the newest/oldest switch only applies to "last seen".
     const sortBox = h('div', { class: 'toolbar', style: { margin: 0 } });
@@ -89,18 +100,23 @@ export async function render(root, ctx) {
       sel('etype', t('err_all_types'), uniq(r => [r.data?.type]).map(s => [s, s])),
       sel('app', t('err_all_apps'), uniq(r => [r.data?.app]).map(s => [s, s])),
       sel('resp', t('err_all_resp'), uniq(r => r.data?.responsibles || []).map(s => [s, s])),
-      sel('only', t('err_all_items'), [['changed', t('err_only_changed')], ...(w ? [['window', t('err_only_window')]] : [])]),
+      sel('only', t('err_all_items'), [['changed', t('err_only_changed')], ['added', t('err_only_added')], ['status', t('err_only_status')], ['runs_up', t('err_only_runs_up')],
+        ...(w ? [['window', t('err_only_window')]] : [])]),
       sortBox,
       btn(t('err_report'), () => copyText(errorReport()), { icon: 'copy' }),
       btn('CSV', exportErrors, { icon: 'download' })));
     const tableBox = h('div');
     body.appendChild(tableBox);
+    const keysOf = list => new Set((list || []).map(x => (typeof x === 'string' ? x : x.id)));
+    const added = keysOf(snap?.data.added), stat = keysOf(snap?.data.status), up = keysOf(snap?.data.runs_up);
+    const onlyMatch = r => (st.only === 'changed' ? changed.has(r.key) : st.only === 'added' ? added.has(r.key) : st.only === 'status' ? stat.has(r.key)
+      : st.only === 'runs_up' ? up.has(r.key) : st.only === 'window' ? !!w && within(r.data?.last, w.s, w.e) : true);
     function visible() {
       return errors.filter(r => matchText(r, st.q)
         && (!st.status || (st.status === 'open' ? isOpen(r.data?.status) : r.data?.status === st.status))
         && (!st.etype || r.data?.type === st.etype) && (!st.app || r.data?.app === st.app)
         && (!st.resp || (r.data?.responsibles || []).includes(st.resp))
-        && (!st.only || (st.only === 'changed' ? changed.has(r.key) : w && within(r.data?.last, w.s, w.e))))
+        && (!st.only || onlyMatch(r)))
         .sort((a, b) => st.sort === 'runs' ? (b.data?.runs?.[2] || 0) - (a.data?.runs?.[2] || 0)
           : st.sort === 'id' ? String(a.key).localeCompare(String(b.key), undefined, { numeric: true })
             : directed((x, y) => String(x.data?.last || '').localeCompare(String(y.data?.last || '')), listOrder('tri.errors'))(a, b)
@@ -110,14 +126,14 @@ export async function render(root, ctx) {
       clear(tableBox);
       const vis = visible();
       if (!vis.length) { tableBox.appendChild(emptyState(t('no_match'))); return; }
-      tableBox.appendChild(h('div', { class: 'hint' }, t('n_items', { n: vis.length })));
+      tableBox.appendChild(h('div', { class: 'hint' }, t('n_items', { n: vis.length }), ' · ', t('err_click_hint')));
       tableBox.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
         h('thead', null, h('tr', null, ['ID', t('f_title'), t('f_status'), t('f_type'), t('err_runs'), t('err_packages'), t('err_resp'), t('err_last'), t('err_app')].map(x => h('th', null, x)))),
         h('tbody', null, vis.map(r => {
           const d = r.data || {}, prev = d.prev_runs?.[2], delta = prev !== undefined && prev !== null ? (d.runs?.[2] || 0) - prev : 0;
-          return h('tr', { class: 'click', tabindex: '0', onclick: () => errorDetail(r), onkeydown: e => { if (e.key === 'Enter') errorDetail(r); } },
+          return h('tr', { class: 'click', tabindex: '0', onclick: () => errorDetail(r, vis), onkeydown: e => { if (e.key === 'Enter') errorDetail(r, vis); } },
             h('td', { class: 'mono nowrap' }, r.key, (snap?.data.added || []).includes(r.key) ? h('span', null, ' ', chip(t('err_new'), 'bad')) : null),
-            h('td', { style: { minWidth: '240px' } }, r.title),
+            h('td', { style: { minWidth: '240px' } }, r.title, hasContent(d.notes) ? h('span', { class: 'small muted', title: t('f_notes_rich') }, ' 📝') : null),
             h('td', { class: 'nowrap' }, chip(d.status || '—', statusKind(d.status)),
               d.prev_status && d.status_since === d.last_import ? h('div', { class: 'small muted' }, `${t('err_was')} ${d.prev_status}`) : null),
             h('td', { class: 'small' }, d.type || ''),
@@ -131,31 +147,41 @@ export async function render(root, ctx) {
     paintTable();
   }
 
-  function errorDetail(r) {
-    const d = r.data || {};
+  // Error panel: the fields from the export are read-only (the next import would overwrite them); the notes and
+  // screenshots written here stay through imports. ‹ › go through the list the error was opened from.
+  function errorDetail(r, navList) {
     const hist = snaps.slice().reverse().map(sn => ({ sn, it: (sn.data.items || []).find(x => x[0] === r.key) })).filter(x => x.it);
     const max = Math.max(1, ...hist.map(x => x.it[2] || 0));
-    // hist runs oldest → newest (bars); the table follows the list's newest/oldest switch.
-    const histBox = h('div', { class: 'stack' });
-    const paintHist = () => clear(histBox).append(
-      h('div', { class: 'toolbar', style: { margin: 0 } }, orderToggle('tri.errhist', () => paintHist())),
-      h('div', { class: 'table-wrap' }, h('table', { class: 't' },
-        h('thead', null, h('tr', null, [t('f_date'), t('f_file'), t('f_status'), t('err_runs_total')].map(x => h('th', null, x)))),
-        h('tbody', null, (listOrder('tri.errhist') === 'asc' ? hist : hist.slice().reverse()).map(({ sn, it }) => h('tr', null, h('td', { class: 'nowrap' }, fmtDate(sn.data.date)), h('td', { class: 'small' }, sn.data.file),
-          h('td', null, chip(it[1] || '—', statusKind(it[1]))), h('td', { class: 'num' }, it[2])))))));
-    paintHist();
-    modal({
-      title: `${r.key} · ${r.title}`, wide: true,
-      body: [
-        h('div', { class: 'grid-form' }, [[t('f_status'), d.status], [t('err_status_since'), fmtDate(d.status_since)], [t('f_type'), d.type], [t('err_app'), d.app],
-          [t('err_runs'), (d.runs || []).join(' / ')], [t('err_packages'), d.packages], [t('err_resp'), (d.responsibles || []).join(', ')],
-          [t('err_first'), d.first ? fmtDateTime(Date.parse(d.first) / 1000) : ''], [t('err_last'), d.last ? fmtDateTime(Date.parse(d.last) / 1000) : ''],
-          [t('err_first_import'), fmtDate(d.first_import)]].map(([l, v]) => h('div', null, h('div', { class: 'small muted' }, l), h('div', null, String(v ?? '') || '—')))),
-        h('p', { class: 'hint' }, t('err_runs_hint')),
+    const info = rec => {
+      const d = rec.data || {};
+      // hist runs oldest → newest (bars); the table follows the list's newest/oldest switch.
+      const histBox = h('div', { class: 'stack' });
+      const paintHist = () => clear(histBox).append(
+        h('div', { class: 'toolbar', style: { margin: 0 } }, orderToggle('tri.errhist', () => paintHist())),
+        h('div', { class: 'table-wrap' }, h('table', { class: 't' },
+          h('thead', null, h('tr', null, [t('f_date'), t('f_file'), t('f_status'), t('err_runs_total')].map(x => h('th', null, x)))),
+          h('tbody', null, (listOrder('tri.errhist') === 'asc' ? hist : hist.slice().reverse()).map(({ sn, it }) => h('tr', null, h('td', { class: 'nowrap' }, fmtDate(sn.data.date)), h('td', { class: 'small' }, sn.data.file),
+            h('td', null, chip(it[1] || '—', statusKind(it[1]))), h('td', { class: 'num' }, it[2])))))));
+      paintHist();
+      return h('div', { class: 'stack' },
+        h('div', { class: 'card stack' },
+          h('div', { class: 'pill-row' }, chip(t('err_from_export'), 'info'), h('span', { class: 'small muted' }, t('err_from_export_hint'))),
+          h('div', { class: 'ro-grid' }, [[t('f_status'), d.status], [t('err_status_since'), fmtDate(d.status_since)], [t('f_type'), d.type], [t('err_app'), d.app],
+            [t('err_runs'), (d.runs || []).join(' / ')], [t('err_packages'), d.packages], [t('err_resp'), (d.responsibles || []).join(', ')],
+            [t('err_first'), d.first ? fmtDateTime(Date.parse(d.first) / 1000) : ''], [t('err_last'), d.last ? fmtDateTime(Date.parse(d.last) / 1000) : ''],
+            [t('err_first_import'), fmtDate(d.first_import)]].map(([l, v]) => h('div', null, h('div', { class: 'small muted' }, l), h('div', null, String(v ?? '') || '—')))),
+          h('p', { class: 'hint', style: { margin: 0 } }, t('err_runs_hint'))),
         hist.length > 1 ? h('div', { class: 'card' }, h('h3', null, t('err_hist')),
           h('div', { class: 'bars', role: 'img', 'aria-label': t('err_hist') }, hist.map(({ sn, it }) => h('div', { class: 'b', title: `${sn.data.file}: ${it[1]} · ${it[2]}` },
             h('em', null, it[2]), h('span', { style: { height: Math.max(3, (it[2] || 0) / max * 100) + '%' } }), h('small', null, fmtDate(sn.data.date, { day: '2-digit', month: 'short' })))))) : null,
-        hist.length ? histBox : null],
+        hist.length ? h('details', { class: 'card' }, h('summary', null, t('err_hist_table')), histBox) : null);
+    };
+    openEditor({
+      ctx, section: 'errors', record: r, noDelete: true, title: `${r.key} · ${r.title}`,
+      fields: [{ key: 'data.notes', label: t('f_notes_rich'), type: 'rich', hint: t('err_notes_hint') }],
+      info,
+      nav: navList ? { list: navList, open: x => errorDetail(errors.find(e => e.id === x.id) || x, navList) } : null,
+      onSaved: () => { ctx.invalidate('errors'); load(true); },
     });
   }
 
@@ -168,18 +194,27 @@ export async function render(root, ctx) {
         snaps.map(s => h('option', { value: s.id, selected: s.id === cur.id }, `${fmtDate(s.data.date)} · ${s.data.file}`)))),
       h('span', { class: 'sp' }), btn(t('err_report'), () => copyText(errorReport(cur)), { icon: 'copy' })));
     const d = cur.data;
-    body.appendChild(h('div', { class: 'kpis' }, kpi(t('err_k_total'), d.total), kpi(t('err_k_open'), d.open, 'warn'), kpi(t('err_k_new'), d.added.length, d.added.length ? 'bad' : ''),
-      kpi(t('err_k_status'), d.status.length, d.status.length ? 'info' : ''), kpi(t('err_k_runs_up'), d.runs_up.length, d.runs_up.length ? 'warn' : ''),
-      kpi(t('err_k_seen'), d.seen_again.length), kpi(t('err_k_gone'), d.gone.length)));
-    const section = (label, rows, cols) => rows.length ? h('section', { class: 'card' }, h('h2', null, `${label} · ${rows.length}`),
+    // the counts of this import: the first two open the error list, the others jump to their list below
+    const jump = id => document.getElementById('chg-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const jk = (id, label, v, kind, n) => kpiBox(label, v, kind, n ? () => jump(id) : null, { id: 'chg-k-' + id });
+    body.appendChild(h('div', { class: 'kpis' },
+      kpiBox(t('err_k_total'), d.total, '', () => drill({}, 'err_k_total'), { id: 'chg-k-total' }),
+      kpiBox(t('err_k_open'), d.open, 'warn', () => drill({ status: 'open' }, 'err_k_open'), { id: 'chg-k-open' }),
+      jk('added', t('err_k_new'), d.added.length, d.added.length ? 'bad' : '', d.added.length),
+      jk('status', t('err_k_status'), d.status.length, d.status.length ? 'info' : '', d.status.length),
+      jk('runs_up', t('err_k_runs_up'), d.runs_up.length, d.runs_up.length ? 'warn' : '', d.runs_up.length),
+      kpiBox(t('err_k_seen'), d.seen_again.length), jk('gone', t('err_k_gone'), d.gone.length, '', d.gone.length)));
+    const section = (id, label, rows, cols) => rows.length ? h('section', { class: 'card', id: 'chg-' + id, style: { scrollMarginTop: '12px' } }, h('h2', null, `${label} · ${rows.length}`),
       h('div', { class: 'table-wrap' }, h('table', { class: 't' }, h('tbody', null, rows.map(cols))))) : null;
-    const open = id => { const r = errors.find(x => x.key === id); if (r) errorDetail(r); };
-    const idCell = id => h('td', { class: 'mono nowrap' }, h('button', { type: 'button', class: 'btn sm ghost', onclick: () => open(id) }, id));
+    // ‹ › in the panel go through the errors of the same list
+    const open = (id, ids) => { const r = errors.find(x => x.key === id); if (r) errorDetail(r, ids.map(k => errors.find(x => x.key === k)).filter(Boolean)); };
+    const idCell = (id, ids) => h('td', { class: 'mono nowrap' }, h('button', { type: 'button', class: 'btn sm ghost', onclick: () => open(id, ids) }, id));
+    const sIds = d.status.map(x => x.id), uIds = d.runs_up.map(x => x.id);
     body.append(...[
-      section(t('err_k_new'), d.added, id => h('tr', null, idCell(id), h('td', null, title(id)))),
-      section(t('err_k_status'), d.status, x => h('tr', null, idCell(x.id), h('td', null, title(x.id)), h('td', { class: 'nowrap' }, chip(x.from || '—'), ' → ', chip(x.to, statusKind(x.to))))),
-      section(t('err_k_runs_up'), d.runs_up, x => h('tr', null, idCell(x.id), h('td', null, title(x.id)), h('td', { class: 'num nowrap' }, `${x.from} → ${x.to}`, h('b', { style: { color: 'var(--bad)' } }, ` +${x.to - x.from}`)))),
-      section(t('err_k_gone'), d.gone, id => h('tr', null, idCell(id), h('td', null, title(id)))),
+      section('added', t('err_k_new'), d.added, id => h('tr', null, idCell(id, d.added), h('td', null, title(id)))),
+      section('status', t('err_k_status'), d.status, x => h('tr', null, idCell(x.id, sIds), h('td', null, title(x.id)), h('td', { class: 'nowrap' }, chip(x.from || '—'), ' → ', chip(x.to, statusKind(x.to))))),
+      section('runs_up', t('err_k_runs_up'), d.runs_up, x => h('tr', null, idCell(x.id, uIds), h('td', null, title(x.id)), h('td', { class: 'num nowrap' }, `${x.from} → ${x.to}`, h('b', { style: { color: 'var(--bad)' } }, ` +${x.to - x.from}`)))),
+      section('gone', t('err_k_gone'), d.gone, id => h('tr', null, idCell(id, d.gone), h('td', null, title(id)))),
     ].filter(Boolean));
     if (!d.added.length && !d.status.length && !d.runs_up.length && !d.gone.length) body.appendChild(emptyState(t('err_no_changes')));
   }
@@ -209,7 +244,8 @@ export async function render(root, ctx) {
       download(`errors-${iso(new Date())}.csv`, '\uFEFF' + toCsv(errors, [{ label: 'Error-ID', key: 'key' }, { label: 'Title', key: 'title' }, { label: 'Status', get: r => r.data?.status },
         { label: 'Type', get: r => r.data?.type }, { label: 'TestRunCount', get: r => (r.data?.runs || []).join(' / ') }, { label: 'Affected TestPackages', get: r => r.data?.packages },
         { label: 'Responsibles', get: r => (r.data?.responsibles || []).join(';') }, { label: 'First Time Stamp', get: r => r.data?.first }, { label: 'Last Time Stamp', get: r => r.data?.last },
-        { label: 'Application Name', get: r => r.data?.app }, { label: 'Status since', get: r => r.data?.status_since }]), 'text/csv');
+        { label: 'Application Name', get: r => r.data?.app }, { label: 'Status since', get: r => r.data?.status_since },
+        { label: 'Notes', get: r => plainText(r.data?.notes) }]), 'text/csv');
     }
   }
 
@@ -250,14 +286,19 @@ export async function render(root, ctx) {
       h('span', { class: 'sp' }),
       btn(t('tri_report'), () => copyText(report(a, cur, prev)), { icon: 'copy' })));
     const a = analyse(runs, cur, prev, known, +ctx.settings.flaky_window || 5);
+    // the counts filter the list of failures below (by type) or jump to the resolved ones
+    const toType = type => { st.type = type; save(); paint(); setTimeout(() => document.getElementById('tri-groups')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); };
+    const tk = (id, label, v, kind, type) => kpiBox(label, v, kind, () => toType(type), { id: 'tri-k-' + id, active: type !== 'all' && st.type === type });
     body.appendChild(h('div', { class: 'kpis' },
-      kpi(t('tri_k_run'), a.total), kpi(t('tri_k_passed'), a.passed, 'ok'), kpi(t('tri_k_failed'), a.failed, a.failed ? 'bad' : 'ok'),
-      kpi(t('tri_k_new'), a.count('new'), a.count('new') ? 'bad' : ''), kpi(t('tri_k_recurring'), a.count('recurring'), 'warn'),
-      kpi(t('tri_k_known'), a.count('known')), kpi(t('tri_k_flaky'), a.count('flaky')), kpi(t('tri_k_resolved'), a.resolved.length, 'ok')));
+      kpiBox(t('tri_k_run'), a.total), kpiBox(t('tri_k_passed'), a.passed, 'ok'),
+      tk('failed', t('tri_k_failed'), a.failed, a.failed ? 'bad' : 'ok', 'all'),
+      tk('new', t('tri_k_new'), a.count('new'), a.count('new') ? 'bad' : '', 'new'), tk('recurring', t('tri_k_recurring'), a.count('recurring'), 'warn', 'recurring'),
+      tk('known', t('tri_k_known'), a.count('known'), '', 'known'), tk('flaky', t('tri_k_flaky'), a.count('flaky'), '', 'flaky'),
+      kpiBox(t('tri_k_resolved'), a.resolved.length, 'ok', a.resolved.length ? () => document.getElementById('tri-resolved')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) : null, { id: 'tri-k-resolved' })));
     body.appendChild(h('p', { class: 'muted', style: { margin: 0 } }, t('tri_grouped', { f: a.failed, g: a.groups.length })));
     const counts = type => a.groups.filter(g => g.type === type).length;
-    body.appendChild(seg([['all', `${t('all')} · ${a.groups.length}`], ...['new', 'recurring', 'flaky', 'known'].map(x => [x, `${t('tri_type_' + x)} · ${counts(x)}`])],
-      st.type, v => { st.type = v; save(); paint(); }));
+    body.appendChild(h('div', { id: 'tri-groups', style: { scrollMarginTop: '12px' } }, seg([['all', `${t('all')} · ${a.groups.length}`], ...['new', 'recurring', 'flaky', 'known'].map(x => [x, `${t('tri_type_' + x)} · ${counts(x)}`])],
+      st.type, v => { st.type = v; save(); paint(); })));
     const groups = a.groups.filter(g => st.type === 'all' || g.type === st.type);
     if (!groups.length) body.appendChild(emptyState(t('tri_no_groups')));
     else body.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
@@ -269,12 +310,11 @@ export async function render(root, ctx) {
         h('td', { class: 'nowrap' }, fmtDate(g.firstSeen)),
         h('td', null, g.known ? `${g.known.data?.reason || ''}${g.known.data?.bug ? ' · ' + g.known.data.bug : ''}` : ''),
         h('td', null, canWrite && g.type !== 'known' ? btn(t('tri_mark_known'), () => editKnown(null, g.sample), { cls: 'sm' }) : null)))))));
-    if (a.resolved.length) body.appendChild(h('div', { class: 'card' }, h('h2', null, t('tri_resolved')),
+    if (a.resolved.length) body.appendChild(h('div', { class: 'card', id: 'tri-resolved', style: { scrollMarginTop: '12px' } }, h('h2', null, t('tri_resolved')),
       h('div', { class: 'list' }, a.resolved.map(f => h('div', { class: 'li' }, chip(t('tri_k_resolved'), 'ok'), h('span', { class: 'mono grow' }, f.message), h('span', { class: 'muted' }, f.test))))));
     body.appendChild(trend());
   }
 
-  function kpi(label, v, kind) { return h('div', { class: 'kpi ' + (kind || '') }, h('div', { class: 'l' }, label), h('div', { class: 'v' }, v)); }
 
   function testList(g) {
     modal({ title: g.sample, body: h('div', { class: 'list' }, g.tests.map(x => h('div', { class: 'li' }, h('span', { class: 'mono grow' }, x),
@@ -322,16 +362,18 @@ export async function render(root, ctx) {
     if (!known.length) { body.appendChild(emptyState(t('no_items'))); return; }
     body.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
       h('thead', null, h('tr', null, [t('tri_pattern'), t('tri_reason'), t('tri_bug')].map(x => h('th', null, x)))),
-      h('tbody', null, known.map(k => h('tr', { class: 'click', tabindex: '0', onclick: () => editKnown(k) },
+      h('tbody', null, known.map(k => h('tr', { class: 'click', tabindex: '0', onclick: () => editKnown(k, '', known), onkeydown: e => { if (e.key === 'Enter') editKnown(k, '', known); } },
         h('td', { class: 'mono' }, k.data?.pattern || k.title), h('td', null, k.data?.reason || ''), h('td', null, k.data?.bug || '')))))));
   }
 
-  function editKnown(k, sample) {
+  function editKnown(k, sample, navList) {
     const pattern = sample ? sample.replace(/\(.*?\d.*?\)/g, '').replace(/\d+([.,]\d+)?/g, '').replace(/\s+/g, ' ').trim().toLowerCase() : '';
     openEditor({
       ctx, section: 'known', record: k, defaults: { title: sample || '', data: { pattern } },
       fields: [{ key: 'title', label: t('f_title') }, { key: 'data.pattern', label: t('tri_pattern'), hint: t('tri_pattern_hint') },
-        { key: 'data.reason', label: t('tri_reason') }, { key: 'data.bug', label: t('tri_bug') }],
+        { key: 'data.reason', label: t('tri_reason') }, { key: 'data.bug', label: t('tri_bug') },
+        { key: 'data.notes', label: t('f_notes_rich'), type: 'rich' }],
+      nav: navList ? { list: navList, open: x => editKnown(x, '', navList) } : null,
       onSaved: () => { ctx.invalidate('known'); load(true); },
     });
   }

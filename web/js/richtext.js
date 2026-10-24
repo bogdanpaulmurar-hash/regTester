@@ -1,10 +1,48 @@
 // Small rich text editor (contenteditable) with screenshots: bold, italic, underline, red text,
 // lists, paste/drag images. The stored HTML is cleaned to what the Word export understands.
-import { cleanHtml } from './docx-spec.js';
+// With the server, images are stored once in the database (/api/att/<id>) and the text keeps only the
+// reference; in the demo (no server) they stay inside the text as data URLs.
+import { cleanHtml, fetchDataUrl } from './docx-spec.js';
 import { t } from './i18n.js';
-import { debounce, h } from './util.js';
+import { debounce, h, isHtml, textToHtml, toast } from './util.js';
 
 const MAX_IMG_PX = 1600;
+let imageApi = null;
+
+/** Called once at start-up with the API; only the server API stores images. */
+export function setImageApi(api) { imageApi = api && typeof api.uploadImage === 'function' ? api : null; }
+
+async function storeOne(src) {
+  if (!imageApi || !/^data:image\//.test(src)) return src;
+  const r = await imageApi.uploadImage(src);
+  return r.url;
+}
+
+/** Moves images still kept inside the text (data URLs, e.g. older Word specifications) to the image store. */
+export async function storeImages(html) {
+  if (!imageApi || !/<img[^>]+src="data:image\//i.test(html || '')) return html;
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+  for (const img of doc.querySelectorAll('img[src^="data:image/"]')) img.setAttribute('src', await storeOne(img.getAttribute('src')));
+  return doc.body.firstChild.innerHTML;
+}
+
+/** The opposite, for copying to other programs or saving a standalone .html: images inside the text. */
+export async function inlineImages(html) {
+  if (!/\/api\/att\//.test(html || '')) return html;
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+  for (const img of doc.querySelectorAll('img[src^="/api/att/"]')) {
+    try { img.setAttribute('src', await fetchDataUrl(img.getAttribute('src'))); } catch { img.remove(); }
+  }
+  return doc.body.firstChild.innerHTML;
+}
+
+/** Read-only display of a text field (HTML or older plain text); click on an image opens it full size. */
+export function richView(value, opts = {}) {
+  const el = h('div', { class: 'rt-view' + (opts.cls ? ' ' + opts.cls : '') });
+  el.innerHTML = cleanHtml(isHtml(value) ? value : textToHtml(value, opts.list));
+  el.querySelectorAll('img').forEach(img => { img.title = t('rt_img_open'); img.addEventListener('click', () => window.open(img.src, '_blank', 'noopener')); });
+  return el;
+}
 
 /** Reads an image file into a data URL, scaled down when it is very large. */
 export function imageFileToDataUrl(file) {
@@ -32,15 +70,17 @@ export function imageFileToDataUrl(file) {
  * onChange(html) is called (debounced) with cleaned HTML.
  */
 export function richText(opts) {
-  const ed = h('div', { class: 'rt-area', contenteditable: opts.readOnly ? 'false' : 'true', id: opts.id, role: 'textbox', 'aria-multiline': 'true', 'aria-label': opts.label || '' });
-  ed.innerHTML = cleanHtml(opts.html || '');
+  const ed = h('div', { class: 'rt-area' + (opts.compact ? ' compact' : ''), contenteditable: opts.readOnly ? 'false' : 'true', id: opts.id, role: 'textbox', 'aria-multiline': 'true', 'aria-label': opts.label || '' });
+  ed.innerHTML = cleanHtml(isHtml(opts.html) ? opts.html : textToHtml(opts.html || '', opts.list));
   const emit = debounce(() => opts.onChange && opts.onChange(cleanHtml(ed.innerHTML)), 250);
   const exec = (cmd, val) => { ed.focus(); document.execCommand(cmd, false, val); emit(); };
 
   async function insertImages(files) {
     for (const f of files) {
       if (!/^image\//.test(f.type)) continue;
-      const src = await imageFileToDataUrl(f);
+      let src;
+      try { src = await storeOne(await imageFileToDataUrl(f)); }
+      catch (e) { toast(t('rt_img_failed') + (e?.message ? ': ' + e.message : ''), 'bad'); continue; }
       ed.focus();
       document.execCommand('insertHTML', false, `<img src="${src}"><br>`);
     }
@@ -88,5 +128,8 @@ export function richText(opts) {
     if (files.some(f => /^image\//.test(f.type))) { e.preventDefault(); insertImages(files); }
   });
 
-  return h('div', { class: 'rt' }, toolbar, ed, sizer, opts.readOnly ? null : h('div', { class: 'hint' }, t('rt_hint')));
+  const wrap = h('div', { class: 'rt' }, toolbar, ed, sizer, opts.readOnly || opts.noHint ? null : h('div', { class: 'hint' }, t('rt_hint')));
+  wrap.getValue = () => cleanHtml(ed.innerHTML);
+  wrap.editable = ed;
+  return wrap;
 }

@@ -8,8 +8,15 @@ import { buildCoverage, coverCols, featuresFromDoc } from '../match.js';
 import { catalogFromList, catalogFromTree, looksLikeTree, mergeTree } from '../regtool.js';
 import { cmpVersion } from '../timeline-gen.js';
 import {
-  btn, chip, clear, copyText, directed, download, emptyState, h, iso, listOrder, modal, normalize, orderToggle, seg, store, tabs, toast, toCsv,
+  btn, chip, clear, copyText, directed, download, drillApply, drillBand, drillClear, drillFromParams, emptyState, h, hasContent, iso, kpiBox, listOrder, modal,
+  normalize, orderToggle, plainText, seg, store, tabs, toast, toCsv,
 } from '../util.js';
+
+// filters of the catalogue and of the matrix; a KPI sets them (drill), the notice above the list gives the old ones back
+const CKEYS = ['cq', 'app', 'quality', 'main', 'uncat', 'qlevel', 'once'];
+const CDEF = { cq: '', app: '', quality: '', main: '', uncat: false, qlevel: '', once: false };
+const MKEYS = ['q', 'release', 'filter', 'gapcol', 'norel'];
+const MDEF = { q: '', release: '', filter: 'all', gapcol: '', norel: false };
 
 const CELL = { ok: ['ok', 'cov_ok'], weak: ['warn', 'cov_weak'], gap: ['bad', 'cov_gap'], na: ['', 'cov_na'] };
 const QCHIP = { high: 'bad', hight: 'bad', medium: 'warn', low: '' };
@@ -34,11 +41,24 @@ const sortWith = (defs, key, list) => {
   return d.tie ? (a, b) => cmp(a, b) || d.tie(a, b) : cmp;
 };
 
-export async function render(root, ctx) {
+export async function render(root, ctx, params) {
   const st = Object.assign({ tab: 'catalog', filter: 'all', release: '', q: '', cq: '', app: '', quality: '', main: '', uncat: false, csort: 'added', fsort: 'updated' }, store('cov') || {});
   if (!store('cov.v2')) { st.tab = 'catalog'; store('cov.v2', true); }
   let limit = 300;
   const save = () => store('cov', st);
+  // opened from a KPI elsewhere: #coverage?tab=catalog&uncat=1 or #coverage?tab=matrix&filter=gaps&release=X&norel=1
+  const ptab = params?.get('tab');
+  if (ptab === 'catalog' || ptab === 'matrix') {
+    const isCat = ptab === 'catalog';
+    if (drillFromParams(st, isCat ? CKEYS : MKEYS, isCat ? CDEF : MDEF, params, ['tab'])) {
+      for (const k of ['uncat', 'once', 'norel']) if (typeof st[k] === 'string') st[k] = st[k] === '1' || st[k] === 'true';
+      st.drillTab = ptab; save();
+    }
+  }
+  const drill = (tab, values, from) => { drillApply(st, tab === 'catalog' ? CKEYS : MKEYS, tab === 'catalog' ? CDEF : MDEF, values, from); st.drillTab = tab; st.tab = tab; limit = 300; save(); paint(); };
+  const drillLabel = () => (st.gapcol && st.drill === 'cov_c_' + st.gapcol ? t('cov_k_missing', { what: t(st.drill) }) : t(st.drill));
+  const band = () => (st.drill && st.drillTab === st.tab ? drillBand(drillLabel(), () => { drillClear(st); st.drillTab = null; save(); paint(); }) : null);
+  const undrill = () => { if (st.drill) { st.drill = null; delete st.preDrill; st.drillTab = null; return true; } return false; };
   const canWrite = ctx.canWriteSection('features');
   const COLS = coverCols(ctx);
   let data = { features: [], tests: [], specs: [], transcripts: [], errors: [] }, rows = [];
@@ -78,19 +98,22 @@ export async function render(root, ctx) {
     const uncat = tests.filter(x => !x.data?.main);
     const byApp = {}; tests.forEach(x => { const a = x.data?.app || '—'; byApp[a] = (byApp[a] || 0) + 1; });
     const qn = q => tests.filter(x => normalize(x.data?.quality).startsWith(q)).length;
-    body.appendChild(h('div', { class: 'kpis' }, kpi(t('cat_k_total'), tests.length), kpi(t('cat_k_high'), qn('high')),
-      kpi(t('cat_k_medium'), qn('medium')), kpi(t('cat_k_low'), qn('low')), kpi(t('cat_k_uncat'), uncat.length, uncat.length ? 'warn' : 'ok'),
-      kpi(t('cat_k_once'), tests.filter(x => (x.data?.count || 0) <= 1).length)));
+    const ck = (id, label, v, kind, values) => kpiBox(label, v, kind, () => drill('catalog', values, id), { id, active: st.drill === id && st.drillTab === 'catalog' });
+    body.appendChild(h('div', { class: 'kpis' }, ck('cat_k_total', t('cat_k_total'), tests.length, '', {}), ck('cat_k_high', t('cat_k_high'), qn('high'), '', { qlevel: 'high' }),
+      ck('cat_k_medium', t('cat_k_medium'), qn('medium'), '', { qlevel: 'medium' }), ck('cat_k_low', t('cat_k_low'), qn('low'), '', { qlevel: 'low' }),
+      ck('cat_k_uncat', t('cat_k_uncat'), uncat.length, uncat.length ? 'warn' : 'ok', { uncat: true }),
+      ck('cat_k_once', t('cat_k_once'), tests.filter(x => (x.data?.count || 0) <= 1).length, '', { once: true })));
+    const b = band(); if (b) body.appendChild(b);
     body.appendChild(h('div', { class: 'pill-row' }, Object.entries(byApp).sort((a, b) => b[1] - a[1]).map(([a, n]) =>
-      h('button', { type: 'button', class: 'chip' + (st.app === a ? ' info' : ''), 'aria-pressed': String(st.app === a), onclick: () => { st.app = st.app === a ? '' : a; save(); paint(); } }, `${a} · ${n}`))));
+      h('button', { type: 'button', class: 'chip' + (st.app === a ? ' info' : ''), 'aria-pressed': String(st.app === a), onclick: () => { st.app = st.app === a ? '' : a; undrill(); save(); paint(); } }, `${a} · ${n}`))));
     const uniq = f => [...new Set(tests.map(f).filter(Boolean))].sort();
     const search = h('input', { type: 'search', value: st.cq, placeholder: t('cat_search'), 'aria-label': t('cat_search') });
-    search.addEventListener('input', () => { st.cq = search.value; limit = 300; save(); paintTable(); });
-    const sel = (key, label, opts) => h('select', { 'aria-label': label, onchange: e => { st[key] = e.target.value; limit = 300; save(); paintTable(); } },
+    search.addEventListener('input', () => { st.cq = search.value; limit = 300; if (undrill()) { save(); paint(); search.focus(); return; } save(); paintTable(); });
+    const sel = (key, label, opts) => h('select', { 'aria-label': label, onchange: e => { st[key] = e.target.value; limit = 300; const had = undrill(); save(); if (had) paint(); else paintTable(); } },
       h('option', { value: '' }, label), opts.map(v => h('option', { value: v, selected: st[key] === v }, v)));
     body.appendChild(h('div', { class: 'toolbar' }, h('div', { class: 'grow' }, search),
       sel('main', t('cat_all_main'), uniq(x => x.data?.main)), sel('quality', t('cat_all_quality'), uniq(x => x.data?.quality)),
-      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: st.uncat, onchange: e => { st.uncat = e.target.checked; save(); paintTable(); } }), t('cat_only_uncat')),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: st.uncat, onchange: e => { st.uncat = e.target.checked; const had = undrill(); save(); if (had) paint(); else paintTable(); } }), t('cat_only_uncat')),
       sortBar(CAT_SORT, 'csort', [['added', t('sort_added')], ['updated', t('sort_updated')], ['group', t('sort_group')]], 'cov.catalog', () => paintTable())));
     const tableBox = h('div');
     body.appendChild(tableBox);
@@ -99,6 +122,7 @@ export async function render(root, ctx) {
       const q = normalize(st.cq);
       const vis = tests.filter(x => (!st.app || (x.data?.app || '—') === st.app) && (!st.quality || x.data?.quality === st.quality)
         && (!st.main || x.data?.main === st.main) && (!st.uncat || !x.data?.main)
+        && (!st.qlevel || normalize(x.data?.quality).startsWith(st.qlevel)) && (!st.once || (x.data?.count || 0) <= 1)
         && (!q || normalize(`${x.key} ${x.title} ${x.data?.main} ${x.data?.sub} ${x.data?.secondary}`).includes(q)))
         .sort(sortWith(CAT_SORT, st.csort, 'cov.catalog'));
       if (!vis.length) { tableBox.appendChild(emptyState(t('no_match'))); return; }
@@ -108,9 +132,9 @@ export async function render(root, ctx) {
       for (const x of vis.slice(0, limit)) {
         const g = groupOf(x) || t('cat_uncat');
         if (st.csort === 'group' && g !== grp) { grp = g; trs.push(h('tr', null, h('td', { colspan: 5, style: { background: 'var(--surface-2)', fontWeight: 600 } }, g, h('span', { class: 'small muted' }, ` · ${counts[g]}`)))); }
-        trs.push(h('tr', { class: 'click', tabindex: '0', onclick: () => editTest(x), onkeydown: e => { if (e.key === 'Enter') editTest(x); } },
+        trs.push(h('tr', { class: 'click', tabindex: '0', onclick: () => editTest(x, vis), onkeydown: e => { if (e.key === 'Enter') editTest(x, vis); } },
           h('td', { class: 'mono nowrap' }, x.key.startsWith('TREE:') ? '—' : x.key),
-          h('td', null, x.title, st.csort !== 'group' ? h('div', { class: 'small muted' }, g) : null), h('td', { class: 'small' }, x.data?.app || ''),
+          h('td', null, x.title, hasContent(x.data?.notes) ? h('span', { class: 'small muted', title: t('f_notes_rich') }, ' 📝') : null, st.csort !== 'group' ? h('div', { class: 'small muted' }, g) : null), h('td', { class: 'small' }, x.data?.app || ''),
           h('td', null, x.data?.quality ? chip(x.data.quality, QCHIP[normalize(x.data.quality)] || '') : ''), h('td', { class: 'num' }, x.data?.count ?? '')));
       }
       tableBox.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
@@ -156,7 +180,8 @@ export async function render(root, ctx) {
   // ---------------------------------------------------------------- matrix
   function visible() {
     const q = normalize(st.q);
-    return rows.filter(r => (!st.release || r.feature.data?.release === st.release)
+    return rows.filter(r => (!st.release || r.feature.data?.release === st.release || (st.norel && !r.feature.data?.release))
+      && (!st.gapcol || r.status[st.gapcol] === 'gap')
       && (st.filter === 'all' || (st.filter === 'gaps' ? r.gaps > 0 : st.filter === 'errors' ? r.errors.length > 0 : r.gaps === 0))
       && (!q || normalize(`${r.feature.key} ${r.feature.title} ${r.feature.data?.module}`).includes(q)))
       .sort(sortWith(FEAT_SORT, st.fsort, 'cov.features'));
@@ -182,16 +207,18 @@ export async function render(root, ctx) {
     const withGaps = rows.filter(r => r.gaps > 0).length;
     const withErr = rows.filter(r => r.errors.length).length;
     const colGaps = c => rows.filter(r => r.status[c] === 'gap').length;
+    const mk = (id, label, v, kind, values) => kpiBox(label, v, kind, () => drill('matrix', values, id), { id, active: st.drill === id && st.drillTab === 'matrix' });
     body.appendChild(h('div', { class: 'kpis' },
-      kpi(t('cov_k_features'), rows.length), kpi(t('cov_k_with_gaps'), withGaps, withGaps ? 'bad' : 'ok'),
-      ...COLS.map(c => kpi(t('cov_k_missing', { what: t('cov_c_' + c) }), colGaps(c), colGaps(c) ? 'warn' : 'ok')),
-      kpi(t('cov_k_errors'), withErr, withErr ? 'warn' : 'ok')));
+      mk('cov_k_features', t('cov_k_features'), rows.length, '', {}), mk('cov_k_with_gaps', t('cov_k_with_gaps'), withGaps, withGaps ? 'bad' : 'ok', { filter: 'gaps' }),
+      ...COLS.map(c => mk('cov_c_' + c, t('cov_k_missing', { what: t('cov_c_' + c) }), colGaps(c), colGaps(c) ? 'warn' : 'ok', { gapcol: c })),
+      mk('cov_k_errors', t('cov_k_errors'), withErr, withErr ? 'warn' : 'ok', { filter: 'errors' })));
+    const b = band(); if (b) body.appendChild(b);
     const releases = [...new Set(rows.map(r => r.feature.data?.release).filter(Boolean))].sort();
     const search = h('input', { type: 'search', value: st.q, placeholder: t('cov_search'), 'aria-label': t('cov_search') });
-    search.addEventListener('input', () => { st.q = search.value; save(); paintTable(); });
+    search.addEventListener('input', () => { st.q = search.value; if (undrill()) { save(); paint(); search.focus(); return; } save(); paintTable(); });
     body.appendChild(h('div', { class: 'toolbar' },
-      seg([['all', `${t('all')} · ${rows.length}`], ['gaps', `${t('cov_with_gaps')} · ${withGaps}`], ['done', `${t('cov_complete')} · ${rows.length - withGaps}`], ['errors', `${t('cov_with_errors')} · ${withErr}`]], st.filter, v => { st.filter = v; save(); paint(); }),
-      releases.length ? h('select', { 'aria-label': t('f_release'), onchange: e => { st.release = e.target.value; save(); paint(); } },
+      seg([['all', `${t('all')} · ${rows.length}`], ['gaps', `${t('cov_with_gaps')} · ${withGaps}`], ['done', `${t('cov_complete')} · ${rows.length - withGaps}`], ['errors', `${t('cov_with_errors')} · ${withErr}`]], st.filter, v => { st.filter = v; undrill(); save(); paint(); }),
+      releases.length ? h('select', { 'aria-label': t('f_release'), onchange: e => { st.release = e.target.value; st.norel = false; undrill(); save(); paint(); } },
         h('option', { value: '' }, t('tl_all_releases')), releases.map(r => h('option', { value: r, selected: st.release === r }, r))) : null,
       h('div', { class: 'grow' }, search),
       sortBar(FEAT_SORT, 'fsort', [['updated', t('sort_updated')], ['release', t('sort_release')], ['name', t('sort_name')]], 'cov.features', () => paintTable())));
@@ -206,7 +233,7 @@ export async function render(root, ctx) {
         h('thead', null, h('tr', null, h('th', null, t('cov_feature')), h('th', null, t('f_release')), h('th', null, t('f_sprint')),
           COLS.map(c => h('th', null, t('cov_c_' + c))), h('th', null, t('cov_c_errors')), h('th', null, t('f_status')))),
         h('tbody', null, vis.map(r => h('tr', null,
-          h('td', null, h('button', { type: 'button', class: 'cover-cell', style: { textAlign: 'left' }, onclick: () => (r.feature.virtual ? ctx.navigate('specs?id=' + r.feature.doc.id) : editFeature(r.feature)) },
+          h('td', null, h('button', { type: 'button', class: 'cover-cell', style: { textAlign: 'left' }, onclick: () => (r.feature.virtual ? ctx.navigate('specs?id=' + r.feature.doc.id) : editFeature(r.feature, vis.map(x => x.feature).filter(x => !x.virtual))) },
             r.feature.key ? h('span', { class: 'mono muted' }, r.feature.key + ' ') : null, h('b', null, r.feature.title),
             r.feature.virtual ? h('div', { class: 'small muted' }, t('cov_from_doc')) : null)),
           h('td', null, r.feature.data?.release || ''), h('td', null, r.feature.data?.sprint || ''),
@@ -219,11 +246,17 @@ export async function render(root, ctx) {
     paintTable();
   }
 
-  function kpi(label, value, kind) { return h('div', { class: 'kpi ' + (kind || '') }, h('div', { class: 'l' }, label), h('div', { class: 'v' }, value)); }
 
+  // errors linked to a function: each opens the error list filtered on it, where the error can be opened and edited
   function errorList(r) {
-    modal({ title: `${r.feature.title} · ${t('cov_c_errors')}`, body: h('div', { class: 'list' }, r.errors.map(e => h('div', { class: 'li' }, h('span', { class: 'mono' }, e.key), h('span', { class: 'grow' }, e.title), chip(e.data?.status || '', 'warn')))),
-      footer: c => [btn(t('cov_go', { where: ctx.pageLabel('triage') }), () => { c(); ctx.navigate('triage'); }, { cls: 'primary' })] });
+    let close = null;
+    const toErr = e => { close(); ctx.drill('triage', { tab: 'errors', status: '', q: e.key, from: 'cov_c_errors' }); };
+    close = modal({
+      title: `${r.feature.title} · ${t('cov_c_errors')}`,
+      body: h('div', { class: 'list' }, r.errors.map(e => h('div', { class: 'li click', tabindex: '0', role: 'button', onclick: () => toErr(e), onkeydown: ev => { if (ev.key === 'Enter') toErr(e); } },
+        h('span', { class: 'mono' }, e.key), h('span', { class: 'grow' }, e.title), chip(e.data?.status || '—')))),
+      footer: c => [btn(t('cov_go', { where: ctx.pageLabel('triage') }), () => { c(); ctx.drill('triage', { tab: 'errors', status: 'open', from: 'err_k_open' }); }, { cls: 'primary' })],
+    });
   }
 
   function cellDetail(r, col) {
@@ -253,23 +286,27 @@ export async function render(root, ctx) {
     });
   }
 
-  function editFeature(f) {
+  function editFeature(f, navList) {
     openEditor({
       ctx, section: 'features', record: f, fields: [
         { key: 'key', label: t('f_code') }, { key: 'title', label: t('f_title') },
         { key: 'data.sprint', label: t('f_sprint') }, { key: 'data.release', label: t('f_release') }, { key: 'data.module', label: t('f_module') },
-        { key: 'body', label: t('f_description'), type: 'textarea', rows: 6 }],
+        { key: 'body', label: t('f_description'), type: 'textarea', rows: 6, hint: t('f_desc_import_hint') },
+        { key: 'data.notes', label: t('f_notes_rich'), type: 'rich', hint: t('f_notes_rich_hint') }],
+      nav: navList ? { list: navList, open: x => editFeature(data.features.find(y => y.id === x.id) || x, navList) } : null,
       onSaved: () => { ctx.invalidate('features'); load(true); },
     });
   }
 
-  function editTest(x) {
+  function editTest(x, navList) {
     openEditor({
       ctx, section: 'tests', record: x, fields: [
         { key: 'key', label: t('f_test_id') }, { key: 'title', label: t('f_title') }, { key: 'data.app', label: t('err_app') },
         { key: 'data.quality', label: t('cat_quality'), datalist: ['High', 'Medium', 'Low'] },
         { key: 'data.main', label: t('cat_main') }, { key: 'data.sub', label: t('cat_sub') }, { key: 'data.secondary', label: t('cat_secondary') },
-        { key: 'data.feature', label: t('f_feature_code') }, { key: 'body', label: t('f_description'), type: 'textarea' }],
+        { key: 'data.feature', label: t('f_feature_code') }, { key: 'body', label: t('f_description'), type: 'textarea', hint: t('f_desc_import_hint') },
+        { key: 'data.notes', label: t('f_notes_rich'), type: 'rich', hint: t('f_notes_rich_hint') }],
+      nav: navList ? { list: navList, open: y => editTest(data.tests.find(z => z.id === y.id) || y, navList) } : null,
       onSaved: () => { ctx.invalidate('tests'); load(true); },
     });
   }
@@ -280,7 +317,7 @@ export async function render(root, ctx) {
     if (!items.length) { body.appendChild(emptyState(t('no_items'))); return; }
     body.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
       h('thead', null, h('tr', null, [t('f_key'), t('f_title'), t('f_sprint'), t('f_release')].map(x => h('th', null, x)))),
-      h('tbody', null, items.map(x => h('tr', { class: 'click', tabindex: '0', onclick: () => editFeature(x) },
+      h('tbody', null, items.map(x => h('tr', { class: 'click', tabindex: '0', onclick: () => editFeature(x, items), onkeydown: e => { if (e.key === 'Enter') editFeature(x, items); } },
         h('td', { class: 'mono' }, x.key), h('td', null, x.title), h('td', null, x.data?.sprint), h('td', null, x.data?.release)))))));
   }
 

@@ -6,7 +6,7 @@ import { openImport } from '../importer.js';
 import { DM_FIELDS, regspecRecord } from '../regtool.js';
 import { indexDoc, search, similarTo } from '../search.js';
 import {
-  btn, chip, clear, debounce, directed, download, emptyState, fmtDate, h, highlight, iso, listOrder, modal, orderToggle, seg, snippet, store, tabs, toCsv,
+  btn, chip, clear, debounce, directed, download, drillApply, drillBand, drillClear, dropDrill, emptyState, fmtDate, h, highlight, iso, listOrder, modal, orderToggle, plainText, seg, snippet, store, tabs, toCsv,
 } from '../util.js';
 
 export const SPEC_KINDS = ['spec', 'regspec', 'bug', 'issue', 'procedure', 'note'];
@@ -16,6 +16,11 @@ const STATUS_CHIP = { approved: 'ok', freigegeben: 'ok', open: 'warn', 'in progr
 export async function render(root, ctx, params) {
   const st = Object.assign({ tab: 'search', q: '', fuzzy: true, sort: 'score', tsort: 'updated', saved: [] }, store('specs') || {});
   const save = () => store('specs', st);
+  // opened from a KPI: #specs?tab=table&kind=regspec&release=X&from=<kpi>
+  if (params?.get('from') && params.get('tab') === 'table') {
+    drillApply(st, ['tkind', 'trel'], { tkind: 'all', trel: '' }, { tkind: params.get('kind') || 'all', trel: params.get('release') || '' }, params.get('from'));
+    st.tab = 'table'; save(); dropDrill();
+  }
   const canWrite = ctx.canWriteSection('specs');
   let docs = [];
 
@@ -93,17 +98,18 @@ export async function render(root, ctx, params) {
       resBox.appendChild(h('div', { class: 'toolbar' }, h('span', { class: 'hint' }, t('specs_n_results', { n: res.length, total: docs.length })), h('span', { class: 'sp' }),
         res.length ? btn('CSV', () => download(`specs-${iso(new Date())}.csv`, '\uFEFF' + toCsv(res.map(x => x.doc.r), [
           { label: 'Key', key: 'key' }, { label: 'Type', key: 'kind' }, { label: 'Title', key: 'title' }, { label: 'Status', get: r => r.data?.status },
-          { label: 'Module', get: r => r.data?.module }, { label: 'Release', get: r => r.data?.release }, { label: 'Tags', get: r => (r.tags || []).join(', ') }, { label: 'Text', key: 'body' }]), 'text/csv'), { icon: 'download', cls: 'sm' }) : null));
+          { label: 'Module', get: r => r.data?.module }, { label: 'Release', get: r => r.data?.release }, { label: 'Tags', get: r => (r.tags || []).join(', ') }, { label: 'Text', get: r => plainText(r.body) }]), 'text/csv'), { icon: 'download', cls: 'sm' }) : null));
       if (!docs.length) { resBox.appendChild(emptyState(t('specs_empty'), canWrite ? btn(t('import'), importDialog, { icon: 'upload', cls: 'primary' }) : null)); return; }
       if (!res.length) { resBox.appendChild(emptyState(t('specs_no_results'))); return; }
+      const shown = res.slice(0, 200).map(x => x.doc.r);
       for (const { doc } of res.slice(0, 200)) {
         const r = doc.r;
-        resBox.appendChild(h('article', { class: 'card', style: { padding: '14px 16px', cursor: 'pointer' }, tabindex: '0', onclick: () => edit(r), onkeydown: e => { if (e.key === 'Enter') edit(r); } },
+        resBox.appendChild(h('article', { class: 'card', style: { padding: '14px 16px', cursor: 'pointer' }, tabindex: '0', onclick: () => edit(r, shown), onkeydown: e => { if (e.key === 'Enter') edit(r, shown); } },
           h('div', { class: 'pill-row' }, chip(t('sk_' + (r.kind || 'note')), KIND_CHIP[r.kind]), r.key ? h('span', { class: 'mono muted' }, highlight(r.key, terms)) : null,
             r.data?.status ? chip(r.data.status, STATUS_CHIP[String(r.data.status).toLowerCase()]) : null,
             h('span', { class: 'sp' }), h('span', { class: 'small muted' }, `${[r.data?.module, r.data?.release].filter(Boolean).join(' · ')} · ${fmtDate(r.updated_at)} · v${r.version}`)),
           h('h3', { style: { margin: '6px 0 4px', fontSize: '15px' } }, highlight(r.title, terms)),
-          h('div', { class: 'small', style: { color: 'var(--fg-2)' } }, highlight(snippet(r.body, terms), terms)),
+          h('div', { class: 'small', style: { color: 'var(--fg-2)' } }, highlight(snippet(plainText(r.body), terms), terms)),
           r.tags?.length ? h('div', { class: 'pill-row', style: { marginTop: '6px' } }, r.tags.map(x => chip('#' + x))) : null));
       }
     }
@@ -120,31 +126,32 @@ export async function render(root, ctx, params) {
   // -------------------------------------------------------------- table
   function table() {
     const kinds = SPEC_KINDS.filter(k => docs.some(d => d.r.kind === k));
-    let kind = 'all';
+    let kind = st.tkind && st.tkind !== 'all' && SPEC_KINDS.includes(st.tkind) ? st.tkind : 'all';
     const box = h('div');
     const paintT = () => {
       clear(box);
       const byKey = (a, b) => String(a.key).localeCompare(String(b.key), undefined, { numeric: true });
-      const list = docs.filter(d => kind === 'all' || d.r.kind === kind).map(d => d.r)
+      const list = docs.filter(d => (kind === 'all' || d.r.kind === kind) && (!st.drill || !st.trel || d.r.data?.release === st.trel)).map(d => d.r)
         .sort(st.tsort === 'key' ? byKey : (a, b) => directed((x, y) => x.updated_at - y.updated_at, listOrder('specs.table'))(a, b) || byKey(a, b));
       box.appendChild(h('div', { class: 'table-wrap' }, h('table', { class: 't' },
         h('thead', null, h('tr', null, [t('f_key'), t('f_type'), t('f_title'), t('f_status'), t('f_module'), t('f_release'), t('f_updated')].map(x => h('th', null, x)))),
-        h('tbody', null, list.map(r => h('tr', { class: 'click', tabindex: '0', onclick: () => edit(r) },
+        h('tbody', null, list.map(r => h('tr', { class: 'click', tabindex: '0', onclick: () => edit(r, list), onkeydown: e => { if (e.key === 'Enter') edit(r, list); } },
           h('td', { class: 'mono nowrap' }, r.key), h('td', null, chip(t('sk_' + (r.kind || 'note')), KIND_CHIP[r.kind])), h('td', null, r.title),
           h('td', null, r.data?.status || ''), h('td', null, r.data?.module || ''), h('td', null, r.data?.release || ''), h('td', { class: 'nowrap' }, fmtDate(r.updated_at))))))));
     };
     const segBox = h('div');
     const paintSeg = () => clear(segBox).appendChild(h('div', { class: 'toolbar' },
-      seg([['all', t('all')], ...kinds.map(k => [k, t('sk_' + k)])], kind, v => { kind = v; paintSeg(); paintT(); }),
+      seg([['all', t('all')], ...kinds.map(k => [k, t('sk_' + k)])], kind, v => { kind = v; st.tkind = v; if (st.drill) { st.drill = null; delete st.preDrill; st.trel = ''; } save(); paintSeg(); paintT(); }),
       seg([['updated', t('sort_updated')], ['key', t('specs_sort_key')]], st.tsort, v => { st.tsort = v; save(); paintSeg(); paintT(); }),
       st.tsort === 'updated' ? orderToggle('specs.table', () => paintT()) : null));
+    if (st.drill) body.appendChild(drillBand(t(st.drill, { r: st.trel || '—' }), () => { drillClear(st); kind = st.tkind || 'all'; save(); paint(); }));
     body.append(segBox, box);
     paintSeg();
     paintT();
   }
 
   // --------------------------------------------------------------- edit
-  function edit(r) {
+  function edit(r, navList) {
     const modules = [...new Set(docs.map(d => d.r.data?.module).filter(Boolean))];
     const releases = [...new Set(docs.map(d => d.r.data?.release).filter(Boolean))];
     openEditor({
@@ -159,7 +166,7 @@ export async function render(root, ctx, params) {
         { key: 'data.release', label: t('f_release'), datalist: releases },
         { key: 'tags', label: t('f_tags'), type: 'tags', hint: t('specs_tags_hint') },
         { key: 'data.links', label: t('f_links'), hint: t('specs_links_hint') },
-        { key: 'body', label: t('f_text'), type: 'textarea', rows: 12 },
+        { key: 'body', label: t('f_text'), type: 'rich' },
       ],
       extra: rec => {
         if (!rec.id) return null;
@@ -170,6 +177,7 @@ export async function render(root, ctx, params) {
           chip(t('sk_' + (doc.r.kind || 'note')), KIND_CHIP[doc.r.kind]), h('div', { class: 'grow' }, doc.r.key ? h('span', { class: 'mono muted' }, doc.r.key + ' ') : null, doc.r.title),
           h('span', { class: 'small muted num' }, Math.round(score * 100) + '%')))));
       },
+      nav: navList ? { list: navList, open: x => edit(docs.find(d => d.r.id === x.id)?.r || x, navList) } : null,
       onSaved: () => { ctx.invalidate('specs'); load(true); },
     });
   }

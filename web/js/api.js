@@ -7,7 +7,7 @@ import { store } from './util.js';
 // server error codes with a translated explanation (err_<code> in i18n.js)
 const KNOWN = new Set(['read_only', 'busy', 'shared_unavailable', 'shared_not_found', 'shared_not_writable',
   'shared_init_required', 'shared_no_db', 'backup_dir_empty', 'backup_dir_relative', 'backup_dir_not_writable', 'export_invalid',
-  'export_newer', 'folder_dialog_unavailable']);
+  'export_newer', 'folder_dialog_unavailable', 'att_type', 'att_empty', 'att_too_large']);
 
 class HttpError extends Error {
   constructor(status, body) {
@@ -17,8 +17,14 @@ class HttpError extends Error {
   }
 }
 
+// Images in text fields are loaded by <img> tags, which cannot send the Authorization header:
+// the same session token goes in a cookie that only /api/att/ receives.
+function setImageCookie(token) {
+  document.cookie = token ? `rt_token=${token}; path=/api/att/; SameSite=Strict` : 'rt_token=; path=/api/att/; max-age=0; SameSite=Strict';
+}
+
 class RemoteApi {
-  constructor() { this.demo = false; this.token = store('token') || null; }
+  constructor() { this.demo = false; this.token = store('token') || null; setImageCookie(this.token); }
 
   async req(method, path, body) {
     const headers = { 'Content-Type': 'application/json' };
@@ -27,7 +33,7 @@ class RemoteApi {
     let data = null;
     try { data = await res.json(); } catch { if (res.ok) throw new HttpError(res.status, { error: 'incomplete response' }); }
     if (!res.ok) {
-      if (res.status === 401 && path !== 'login') { this.token = null; store('token', null); window.dispatchEvent(new Event('rt-auth')); }
+      if (res.status === 401 && path !== 'login') { this.token = null; store('token', null); setImageCookie(null); window.dispatchEvent(new Event('rt-auth')); }
       throw new HttpError(res.status, data);
     }
     return data;
@@ -36,9 +42,9 @@ class RemoteApi {
   publicSettings() { return this.req('GET', 'public-settings'); }
   async login(username, password) {
     const r = await this.req('POST', 'login', { username, password });
-    this.token = r.token; store('token', r.token); return r.user;
+    this.token = r.token; store('token', r.token); setImageCookie(r.token); return r.user;
   }
-  async logout() { try { await this.req('POST', 'logout'); } finally { this.token = null; store('token', null); } }
+  async logout() { try { await this.req('POST', 'logout'); } finally { this.token = null; store('token', null); setImageCookie(null); } }
   me() { return this.req('GET', 'me'); }
   updateMe(data) { return this.req('PUT', 'me', data); }
 
@@ -50,6 +56,11 @@ class RemoteApi {
   imports(section) { return this.req('GET', 'imports' + (section ? '?section=' + section : '')); }
   history(params = {}) { return this.req('GET', 'history?' + new URLSearchParams(params)); }
   restore(history_id) { return this.req('POST', 'history/restore', { history_id }); }
+
+  /** Stores a screenshot once; returns { id, url } with url = /api/att/<id>. */
+  uploadImage(data_url) { return this.req('POST', 'att', { data_url }); }
+  attStats() { return this.req('GET', 'att/stats'); }
+  attCleanup() { return this.req('POST', 'att/cleanup', {}); }
 
   settings() { return this.req('GET', 'settings'); }
   saveSettings(values) { return this.req('PUT', 'settings', values); }

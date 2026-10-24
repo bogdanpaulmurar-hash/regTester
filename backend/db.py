@@ -9,7 +9,10 @@ is used.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -92,6 +95,14 @@ EXPORT_FORMAT = "regtester-export"
 EXPORT_VERSION = 1
 # record fields compared and written back by a JSON restore
 RESTORE_FIELDS = ("kind", "key", "title", "body", "data", "tags")
+
+# Images in text fields (screenshots). Stored once per content (sha256) and referenced from the HTML as
+# /api/att/<id>, so the history keeps only the reference and a restored version still shows its images.
+ATT_RE = re.compile(r"/api/att/([0-9a-f]{64})")
+ATT_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+ATT_MAX = 8 * 1024 * 1024
+# Notes written in regTester on imported records (errors, test cases, features): never changed by an import.
+KEEP_ON_IMPORT = ("notes",)
 
 
 class ReadOnlyError(Exception):
@@ -228,6 +239,10 @@ class Database:
                     token TEXT PRIMARY KEY, username TEXT, created_at REAL, last_seen REAL
                 );
                 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
+                CREATE TABLE IF NOT EXISTS attachments(
+                    id TEXT PRIMARY KEY, mime TEXT, size INTEGER, data BLOB,
+                    created_at REAL, created_by TEXT
+                );
                 """
             )
             c.execute("INSERT OR REPLACE INTO meta VALUES('schema', ?)", (str(SCHEMA_VERSION),))
@@ -387,6 +402,8 @@ class Database:
         created = updated = removed = 0
         ts = now()
         with self.tx(user) as c:
+            kept = self._kept_by_key(c, section)
+            records = [self._with_kept(rec, kept) for rec in records]
             if mode == "replace":
                 for r in c.execute("SELECT * FROM records WHERE section=? AND deleted=0", (section,)).fetchall():
                     c.execute("UPDATE records SET deleted=1, updated_at=?, updated_by=? WHERE id=?", (ts, user, r["id"]))
@@ -429,6 +446,138 @@ class Database:
                  f"{filename}: +{created} ~{updated} -{removed} ({mode})", None, None),
             )
         return {"import_id": import_id, "created": created, "updated": updated, "removed": removed}
+
+    @staticmethod
+    def _kept_by_key(c, section: str) -> dict[str, dict[str, Any]]:
+        """Fields written in regTester (KEEP_ON_IMPORT) of the current records, by key."""
+        out: dict[str, dict[str, Any]] = {}
+        for r in c.execute("SELECT key, data FROM records WHERE section=? AND deleted=0 AND key<>''", (section,)).fetchall():
+            data = json.loads(r["data"] or "{}")
+            keep = {k: data[k] for k in KEEP_ON_IMPORT if data.get(k)}
+            if keep:
+                out[r["key"]] = keep
+        return out
+
+    @staticmethod
+    def _with_kept(rec: dict[str, Any], kept: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        keep = kept.get(str(rec.get("key") or ""))
+        if not keep or not isinstance(rec, dict):
+            return rec
+        data = rec.get("data") if isinstance(rec.get("data"), dict) else {}
+        return {**rec, "data": {**data, **{k: v for k, v in keep.items() if not data.get(k)}}}
+
+    # ------------------------------------------------------------ attachments
+    def put_attachment(self, raw: bytes, mime: str, user: str) -> str:
+        mime = (mime or "").lower()
+        if mime not in ATT_TYPES:
+            raise ValueError("att_type")
+        if not raw:
+            raise ValueError("att_empty")
+        if len(raw) > ATT_MAX:
+            raise ValueError("att_too_large")
+        aid = hashlib.sha256(raw).hexdigest()
+        if self.q("SELECT 1 FROM attachments WHERE id=?", (aid,)):
+            return aid
+        with self.tx(user) as c:
+            c.execute("INSERT OR IGNORE INTO attachments VALUES(?,?,?,?,?,?)", (aid, mime, len(raw), raw, now(), user))
+        return aid
+
+    def put_data_url(self, data_url: str, user: str) -> str:
+        m = re.match(r"^data:(image/[\w.+-]+);base64,(.*)$", str(data_url or ""), re.S)
+        if not m:
+            raise ValueError("att_type")
+        try:
+            raw = base64.b64decode(m.group(2), validate=False)
+        except ValueError as exc:
+            raise ValueError("att_type") from exc
+        return self.put_attachment(raw, m.group(1), user)
+
+    def get_attachment(self, aid: str) -> tuple[str, bytes]:
+        try:
+            rows = self.q("SELECT mime, data FROM attachments WHERE id=?", (aid,))
+        except sqlite3.OperationalError:  # an old read-only copy without the table
+            rows = []
+        if not rows:
+            raise KeyError(aid)
+        return rows[0]["mime"], bytes(rows[0]["data"])
+
+    @staticmethod
+    def att_refs(*texts: Any) -> set[str]:
+        out: set[str] = set()
+        for t in texts:
+            if t:
+                out.update(ATT_RE.findall(t if isinstance(t, str) else json.dumps(t, ensure_ascii=False)))
+        return out
+
+    def _used_attachments(self) -> set[str]:
+        """Images still shown by a record (deleted ones too) or by any version in the history."""
+        used: set[str] = set()
+        for r in self.q("SELECT body, data FROM records"):
+            used |= self.att_refs(r["body"], r["data"])
+        for r in self.q("SELECT before, after FROM history WHERE before LIKE '%/api/att/%' OR after LIKE '%/api/att/%'"):
+            used |= self.att_refs(r["before"], r["after"])
+        return used
+
+    def attachment_stats(self) -> dict[str, Any]:
+        try:
+            rows = self.q("SELECT id, size FROM attachments")
+        except sqlite3.OperationalError:
+            rows = []
+        used = self._used_attachments()
+        unused = [r for r in rows if r["id"] not in used]
+        return {"count": len(rows), "bytes": sum(r["size"] or 0 for r in rows),
+                "unused": len(unused), "unused_bytes": sum(r["size"] or 0 for r in unused)}
+
+    def cleanup_attachments(self, user: str) -> dict[str, Any]:
+        """Remove images nothing refers to any more (not even an old version in the history)."""
+        with self.tx(user) as c:
+            used = self._used_attachments()
+            rows = c.execute("SELECT id, size FROM attachments").fetchall()
+            gone = [r for r in rows if r["id"] not in used]
+            for r in gone:
+                c.execute("DELETE FROM attachments WHERE id=?", (r["id"],))
+            size = sum(r["size"] or 0 for r in gone)
+            if gone:
+                c.execute(
+                    "INSERT INTO history(ts,user,section,record_id,action,summary) VALUES(?,?,?,?,?,?)",
+                    (now(), user, "admin", "attachments", "att-cleanup", f"{len(gone)} images, {size} bytes"))
+        return {"removed": len(gone), "bytes": size}
+
+    def _export_attachments(self, ids: set[str]) -> dict[str, dict[str, str]]:
+        out: dict[str, dict[str, str]] = {}
+        for aid in sorted(ids):
+            try:
+                mime, raw = self.get_attachment(aid)
+            except KeyError:
+                continue
+            out[aid] = {"mime": mime, "data": base64.b64encode(raw).decode("ascii")}
+        return out
+
+    @staticmethod
+    def _file_attachments(data: dict[str, Any]) -> dict[str, tuple[str, bytes]]:
+        """Valid images of an export file (the id must match the content)."""
+        out: dict[str, tuple[str, bytes]] = {}
+        atts = data.get("attachments") if isinstance(data.get("attachments"), dict) else {}
+        for aid, a in atts.items():
+            if not isinstance(a, dict) or a.get("mime") not in ATT_TYPES:
+                continue
+            try:
+                raw = base64.b64decode(str(a.get("data") or ""))
+            except ValueError:
+                continue
+            if raw and len(raw) <= ATT_MAX and hashlib.sha256(raw).hexdigest() == aid:
+                out[aid] = (a["mime"], raw)
+        return out
+
+    def _missing_attachments(self, ids: Iterable[str]) -> set[str]:
+        ids = set(ids)
+        if not ids:
+            return set()
+        try:
+            have = {r["id"] for r in self.q("SELECT id FROM attachments")}
+        except sqlite3.OperationalError:
+            have = set()
+        return ids - have
 
     def list_imports(self, section: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         if section:
@@ -473,8 +622,10 @@ class Database:
                 records[r["section"]].append({**self.row_to_record(r), "deleted": bool(r["deleted"])})
         settings = {k: v for k, v in self.get_settings().items() if k not in LOCAL_KEYS}
         imports = [dict(r) for r in self.q("SELECT * FROM imports ORDER BY ts")]
+        refs = self.att_refs(*(x for recs in records.values() for r in recs for x in (r["body"], r["data"])))
         return {"format": EXPORT_FORMAT, "version": EXPORT_VERSION, "app_version": app_version,
-                "exported_at": now(), "exported_by": user, "settings": settings, "records": records, "imports": imports}
+                "exported_at": now(), "exported_by": user, "settings": settings, "records": records, "imports": imports,
+                "attachments": self._export_attachments(refs)}
 
     @staticmethod
     def _check_export(data: Any) -> dict[str, list[dict[str, Any]]]:
@@ -530,7 +681,9 @@ class Database:
         file_settings = data.get("settings") if isinstance(data.get("settings"), dict) else {}
         current = self.get_settings()
         changed = sorted(k for k, v in file_settings.items() if k in DEFAULT_SETTINGS and k not in LOCAL_KEYS and current.get(k) != v)
-        return {"sections": out, "settings": changed, "exported_at": data.get("exported_at"),
+        file_atts = self._file_attachments(data)
+        return {"sections": out, "settings": changed, "images": len(self._missing_attachments(file_atts)),
+                "exported_at": data.get("exported_at"),
                 "exported_by": data.get("exported_by"), "app_version": data.get("app_version")}
 
     def restore_export(self, data: Any, sections: Iterable[str], with_settings: bool, user: str, label: str) -> dict[str, Any]:
@@ -540,7 +693,14 @@ class Database:
         totals = {"created": 0, "updated": 0, "deleted": 0}
         ts = now()
         hist = "INSERT INTO history(ts,user,section,record_id,action,summary,before,after) VALUES(?,?,?,?,?,?,?,?)"
+        file_atts = self._file_attachments(data)
+        wanted = self.att_refs(*(x for s in chosen for r in recs[s] for x in (r.get("body"), r.get("data"))))
+        images = 0
         with self.tx(user) as c:
+            for aid in sorted(wanted & set(file_atts)):
+                mime, raw = file_atts[aid]
+                images += c.execute("INSERT OR IGNORE INTO attachments VALUES(?,?,?,?,?,?)",
+                                    (aid, mime, len(raw), raw, ts, user)).rowcount
             for section in chosen:
                 cr, up, de, _ = self._restore_plan(c, section, recs[section])
                 for rid, clean, rec in cr:
@@ -575,7 +735,7 @@ class Database:
             changed_settings = sorted(k for k, v in values.items() if before.get(k) != v)
             if changed_settings:
                 self.set_settings(values, user)
-        return {**totals, "sections": chosen, "settings": changed_settings}
+        return {**totals, "sections": chosen, "settings": changed_settings, "images": images}
 
     @staticmethod
     def _check_section(section: str):

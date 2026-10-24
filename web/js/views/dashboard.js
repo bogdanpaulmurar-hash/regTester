@@ -4,7 +4,7 @@ import { isOpen, regtestWindow, within } from '../errors.js';
 import { t } from '../i18n.js';
 import { buildCoverage, coverCols } from '../match.js';
 import { checkTimeline, cmpVersion } from '../timeline-gen.js';
-import { addDays, btn, chip, daysBetween, emptyState, fmtDate, fmtDateTime, h, iso, parseIso } from '../util.js';
+import { addDays, btn, chip, daysBetween, emptyState, fmtDate, fmtDateTime, h, iso, kpiBox, parseIso } from '../util.js';
 
 const PAGE = { timeline: 'timeline', features: 'coverage', tests: 'coverage', specs: 'specs', transcripts: 'transcripts', errors: 'triage', errsnaps: 'triage', docs: 'docs' };
 
@@ -64,17 +64,17 @@ export async function render(root, ctx) {
   const uncat = tests.filter(x => !x.data?.main);
   const relDocs = specs.filter(s => s.kind === 'regspec' && s.data?.release === release);
 
-  const kpi = (label, v, kind, page) => h('button', { type: 'button', class: 'kpi ' + (kind || ''), style: { textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit' }, onclick: () => ctx.navigate(page) },
-    h('div', { class: 'l' }, label), h('div', { class: 'v' }, v));
+  // every box leads to the elements behind its number, with the same filter applied (see drillHash)
+  const kpi = (id, label, v, kind, page, params) => kpiBox(label, v, kind, () => ctx.drill(page, { ...params, from: id }), { id });
   const can = p => ctx.canPage(p);
   root.appendChild(h('div', { class: 'kpis' },
-    can('triage') ? kpi(t('err_k_open'), errors.length ? open.length : '—', open.length ? 'warn' : '', 'triage') : null,
-    can('triage') ? kpi(t('err_k_new'), snap ? snap.data.added.length : '—', snap?.data.added.length ? 'bad' : '', 'triage') : null,
-    can('triage') && win ? kpi(t('err_k_window'), inWin.length, inWin.length ? 'warn' : 'ok', 'triage') : null,
-    can('coverage') ? kpi(t('cat_k_uncat'), tests.length ? uncat.length : '—', uncat.length ? 'warn' : '', 'coverage') : null,
-    can('specs') ? kpi(t('dash_k_regspecs', { r: release || '—' }), relDocs.length, '', 'specs') : null,
-    can('timeline') ? kpi(t('dash_k_tl_issues'), tlIssues.length, tlIssues.length ? 'warn' : 'ok', 'timeline') : null,
-    can('coverage') ? kpi(t('dash_k_gaps'), gaps.length, gaps.length ? 'bad' : 'ok', 'coverage') : null));
+    can('triage') ? kpi('err_k_open', t('err_k_open'), errors.length ? open.length : '—', open.length ? 'warn' : '', 'triage', { tab: 'errors', status: 'open' }) : null,
+    can('triage') ? kpi('err_k_new', t('err_k_new'), snap ? snap.data.added.length : '—', snap?.data.added.length ? 'bad' : '', 'triage', { tab: 'errors', status: '', only: 'added' }) : null,
+    can('triage') && win ? kpi('err_k_window', t('err_k_window'), inWin.length, inWin.length ? 'warn' : 'ok', 'triage', { tab: 'errors', status: 'open', only: 'window' }) : null,
+    can('coverage') ? kpi('cat_k_uncat', t('cat_k_uncat'), tests.length ? uncat.length : '—', uncat.length ? 'warn' : '', 'coverage', { tab: 'catalog', uncat: 1 }) : null,
+    can('specs') ? kpi('dash_k_regspecs', t('dash_k_regspecs', { r: release || '—' }), relDocs.length, '', 'specs', { tab: 'table', kind: 'regspec', release }) : null,
+    can('timeline') ? kpi('dash_k_tl_issues', t('dash_k_tl_issues'), tlIssues.length, tlIssues.length ? 'warn' : 'ok', 'timeline', { view: 'quality' }) : null,
+    can('coverage') ? kpi('dash_k_gaps', t('dash_k_gaps'), gaps.length, gaps.length ? 'bad' : 'ok', 'coverage', { tab: 'matrix', filter: 'gaps', release }) : null));
 
   const todo = [];
   if (snap?.data.added.length) todo.push(['bad', t('err_k_new'), snap.data.added.slice(0, 6).map(id => `${id} ${errors.find(e => e.key === id)?.title || ''}`).join(' · '), 'triage']);

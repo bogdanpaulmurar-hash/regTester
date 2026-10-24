@@ -1,7 +1,8 @@
 // Application shell: navigation, routing, login, theme and language.
 import { connect } from './api.js';
 import { setLang, t } from './i18n.js';
-import { btn, clear, fmtDate, h, icon, modal, store, toast } from './util.js';
+import { setImageApi } from './richtext.js';
+import { btn, clear, drillHash, fmtDate, h, icon, modal, store, toast } from './util.js';
 import { UI_VERSION } from './version.js';
 
 const PAGES = [
@@ -50,6 +51,8 @@ ctx.canWriteSection = section => {
   return (u.sections || ['*']).includes('*') || (u.sections || []).includes(page);
 };
 ctx.navigate = page => { if (location.hash !== '#' + page) location.hash = page; else route(); };
+// open a page with a filter (from a KPI box): the page reads the parameters and shows what is filtered
+ctx.drill = (page, params) => { const hs = drillHash(page, params); if (location.hash !== hs) location.hash = hs; else route(); };
 ctx.reloadSettings = async () => { ctx.settings = await ctx.api.settings(); applyTheme(ctx.settings.theme); };
 ctx.rebuildShell = () => { shell(); route(); };
 ctx.records = async (section, force) => {
@@ -248,6 +251,7 @@ async function start() {
 
 async function boot() {
   ctx.api = await connect();
+  setImageApi(ctx.api);
   try { ctx.settings = await ctx.api.publicSettings(); } catch { ctx.settings = { language: 'ro', theme: 'auto', app_name: 'regTester' }; }
   setLang(store('lang') || ctx.settings.language || 'ro');
   applyTheme(store('theme') || ctx.settings.theme);

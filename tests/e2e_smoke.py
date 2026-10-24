@@ -190,6 +190,58 @@ def main():
             text = page.inner_text(".page")
             assert "New" in text and "Resolved" in text, text[:400]
 
+            # KPIs lead to the elements behind the number, with the filter applied and a notice to remove it
+            page.goto(BASE + "#dashboard"); page.wait_for_selector("[data-kpi=err_k_open]")
+            n_open = int(page.inner_text("[data-kpi=err_k_open] .v"))
+            page.click("[data-kpi=err_k_open]"); page.wait_for_selector("#drill-band")
+            assert page.url.endswith("#triage"), page.url
+            assert page.locator(".page table.t tbody tr").count() == n_open, (n_open, page.locator(".page table.t tbody tr").count())
+            page.click("[data-kpi=err_k_new]"); page.wait_for_timeout(300)
+            assert page.locator(".page table.t tbody tr").count() == 2 and "EI-150" in page.inner_text(".page table.t")
+            page.click("#drill-clear"); page.wait_for_timeout(300)
+            assert page.locator("#drill-band").count() == 0
+            page.click("[data-kpi=err_k_open]"); page.wait_for_timeout(300)
+            # error panel: fields from the export read-only, notes with a pasted screenshot, ‹ › through the list
+            page.locator(".page table.t tbody tr").first.click(); page.wait_for_selector(".drawer .rt-area")
+            first_title = page.inner_text(".drawer header h2")
+            page.click("#ed-next"); page.wait_for_timeout(300)
+            assert page.inner_text(".drawer header h2") != first_title
+            page.click("#ed-prev"); page.wait_for_timeout(300)
+            assert page.inner_text(".drawer header h2") == first_title
+            page.click(".drawer .rt-area"); page.keyboard.type("Seen on the test system ")
+            page.evaluate("""() => new Promise(res => {
+              const c = document.createElement('canvas'); c.width = 40; c.height = 30;
+              const g = c.getContext('2d'); g.fillStyle = '#c00'; g.fillRect(0, 0, 40, 30);
+              c.toBlob(b => {
+                const dt = new DataTransfer(); dt.items.add(new File([b], 'shot.png', { type: 'image/png' }));
+                document.querySelector('.drawer .rt-area').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+                res();
+              }, 'image/png');
+            })""")
+            page.wait_for_selector(".drawer .rt-area img[src^='/api/att/']")
+            page.wait_for_function("document.querySelector('.drawer .rt-area img').naturalWidth === 40", timeout=5000)  # served with the image cookie
+            page.click("#ed-save"); page.wait_for_timeout(600)
+            noted = next(e for e in api("records?section=errors", token) if e["key"] == first_title.split(" · ")[0])
+            assert "/api/att/" in noted["data"]["notes"] and "test system" in noted["data"]["notes"], noted["data"]
+            upload("Import Error Management", "error_management_export_2.xlsx")
+            again = next(e for e in api("records?section=errors", token) if e["id"] == noted["id"])
+            assert again["data"].get("notes") == noted["data"]["notes"], again["data"]
+            page.get_by_role("tab", name="Error items").click(); page.wait_for_timeout(300)
+            page.locator(".page table.t tbody tr", has_text=noted["key"]).first.click(); page.wait_for_selector(".drawer [role=tab]")
+            page.locator(".drawer [role=tab]", has_text="History").click(); page.wait_for_timeout(500)
+            for i in range(page.locator(".drawer .btn", has_text="Compare").count()):
+                page.locator(".drawer .btn", has_text="Compare").nth(i).click(); page.wait_for_timeout(150)
+            assert page.locator(".drawer .hist-thumbs img").count() >= 1
+            page.keyboard.press("Escape")
+            # dashboard → catalogue (uncategorised), timeline quality
+            page.goto(BASE + "#dashboard"); page.wait_for_selector("[data-kpi=cat_k_uncat]")
+            page.click("[data-kpi=cat_k_uncat]"); page.wait_for_selector("#drill-band")
+            assert "#coverage" in page.url and page.is_checked(".page .check input[type=checkbox]")
+            page.click("#drill-clear"); page.wait_for_timeout(300)
+            page.goto(BASE + "#dashboard"); page.wait_for_selector("[data-kpi=dash_k_tl_issues]")
+            page.click("[data-kpi=dash_k_tl_issues]"); page.wait_for_timeout(600)
+            assert page.locator(".page [role=tab][aria-selected=true]").first.inner_text().startswith("Data quality")
+
             # PO sessions are hidden by default; show them again from Administration
             assert page.locator("nav a[data-page=transcripts]").count() == 0, "PO page should be hidden"
             page.goto(BASE + "#admin"); page.wait_for_selector(".page-head")
@@ -208,6 +260,7 @@ def main():
             page.get_by_role("button", name="Export to folder").click(); page.wait_for_timeout(900)
             exports = list(bkdir.glob("regtester-*.json"))
             assert len(exports) == 1, exports
+            assert len(json.loads(exports[0].read_text(encoding="utf-8"))["attachments"]) == 1
             assert "Chosen folder" in page.inner_text(".page")
             s0 = api("records?section=specs", token)[0]
             api(f"records/{s0['id']}", token, "PUT", {"record": {"title": "Changed after export"}, "version": s0["version"]})

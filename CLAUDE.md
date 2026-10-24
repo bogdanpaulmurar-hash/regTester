@@ -25,6 +25,8 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - `sample-data/` conține doar date fictive. Datele reale nu intră niciodată în repo.
 - Folder comun: orice scriere trece prin `db.tx()`/`write_guard()` (fișierul de blocare + `BEGIN IMMEDIATE`); verificarea de versiune se face în tranzacție. Fără WAL pe share. Sesiunile nu se scriu niciodată în baza comună. Polling-ul din fundal (`GET /api/shared`) nu reînnoiește sesiunea.
 - Backup: copii `.db` (complete, cu istoric) și export `.json` (`db.export_data`/`restore_export`, fără utilizatori). Restaurarea din JSON scrie intrări normale în Istoric (create/update/delete), după o copie `.db` de siguranță. Folderul ales (`backup_dir`) e setare locală; cloud = doar avertisment.
+- Imagini din texte: tabelul `attachments` (sha256, o singură copie), referite în HTML ca `/api/att/<id>`; `<img>` primește sesiunea prin cookie-ul `rt_token` (doar `/api/att/`). Editorul e `richtext.js` (`richText`, `storeImages`, `inlineImages`); câmp `type: 'rich'` în `openEditor`. Exportul JSON are secțiunea `attachments`. `data.notes` (`KEEP_ON_IMPORT`) nu e atins de importuri. Căutare/CSV/rapoarte folosesc `plainText()`.
+- KPI-urile sunt `kpiBox()`; trimit la o pagină cu filtru prin `ctx.drill(page, {…, from})` → paginile citesc `params` (`drillFromParams`) și arată `drillBand()`.
 - Listele cronologice arată implicit cele mai noi primele, cu butonul comun `orderToggle()` din `util.js`; alegerea se ține per listă în browser (`rt.order.<listă>`), nu în baza comună.
 - Pagina „Sesiuni PO” e ascunsă implicit (poate fi redenumită/refolosită). Exportul de rezultate al run-urilor e amânat la final.
 - Analiză + plan, apoi aprobarea utilizatorului, apoi implementare.

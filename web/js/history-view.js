@@ -1,11 +1,20 @@
 // Change history: who changed what and when, with field-by-field comparison and restore.
 import { t } from './i18n.js';
-import { btn, chip, clear, directed, emptyState, fmtDateTime, h, listOrder, orderToggle, toast } from './util.js';
+import { attRefs, btn, chip, clear, directed, emptyState, fmtDateTime, h, isHtml, listOrder, orderToggle, plainText, toast } from './util.js';
 
 const ACTION_KIND = { create: 'ok', update: 'info', 'import-update': 'info', delete: 'bad', restore: 'warn', import: '' };
 
-function show(v) {
+const thumbs = ids => ids.length ? h('div', { class: 'hist-thumbs' }, ids.map(id => h('img', { src: '/api/att/' + id, alt: '', loading: 'lazy' }))) : null;
+
+function show(v, other, side) {
   if (v === undefined || v === null) return '';
+  if (isHtml(v) || isHtml(other)) {
+    // formatted text: shown as text, with the images it contains; images added or removed are marked
+    const mine = attRefs(v), theirs = new Set(attRefs(other));
+    const changed = mine.filter(id => !theirs.has(id));
+    return h('div', null, h('div', { class: 'pre-wrap' }, plainText(v).slice(0, 1500)),
+      changed.length ? h('div', { class: 'small muted' }, t(side === 'b' ? 'hist_img_removed' : 'hist_img_added', { n: changed.length })) : null, thumbs(changed));
+  }
   if (typeof v === 'object') return JSON.stringify(v, null, 1).slice(0, 1500);
   return String(v).slice(0, 1500);
 }
@@ -25,7 +34,7 @@ export function diffView(before, after) {
   if (!rows.length) return h('div', { class: 'hint' }, t('hist_no_fields'));
   return h('div', { class: 'diff' },
     h('div', { class: 'k' }), h('div', { class: 'k' }, t('hist_before')), h('div', { class: 'k' }, t('hist_after')),
-    rows.map(([k, b, a]) => [h('div', { class: 'k' }, k), h('div', { class: 'b' }, show(b)), h('div', { class: 'a' }, show(a))]));
+    rows.map(([k, b, a]) => [h('div', { class: 'k' }, k), h('div', { class: 'b' }, show(b, a, 'b')), h('div', { class: 'a' }, show(a, b, 'a'))]));
 }
 
 /** opts: { sections?: string[], record_id?, limit?, compact?, onRestored? } */

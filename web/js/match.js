@@ -1,5 +1,5 @@
 // Links new functions (release notes) to test cases, specifications, procedures and PO sessions.
-import { normalize, similarity } from './util.js';
+import { normalize, plainText, similarity } from './util.js';
 
 export const ALL_COVER_COLS = ['regspec', 'test', 'spec', 'procedure', 'session'];
 export const COVER_COLS = ALL_COVER_COLS;
@@ -56,9 +56,9 @@ export function buildCoverage({ features, tests, specs, transcripts = [], errors
     const idsOf = f.data?.idents?.length ? f.data.idents : [f.key].filter(Boolean);
     const m = {
       regspec: f.virtual ? [{ item: f.doc, how: 'code', score: 1 }] : findMatches(f, regspecs, x => `${x.key} ${x.title} ${(x.data?.idents || []).join(' ')}`, thr),
-      test: findMatches(f, tests, x => `${x.key} ${x.title} ${x.body} ${x.data?.feature || ''} ${x.data?.main || ''} ${x.data?.sub || ''}`, Math.max(thr, 0.55)),
-      spec: findMatches(f, specOnly, x => `${x.key} ${x.title} ${x.body}`, thr),
-      procedure: findMatches(f, procs, x => `${x.key} ${x.title} ${x.body}`, thr),
+      test: findMatches(f, tests, x => `${x.key} ${x.title} ${plainText(x.body)} ${plainText(x.data?.notes)} ${x.data?.feature || ''} ${x.data?.main || ''} ${x.data?.sub || ''}`, Math.max(thr, 0.55)),
+      spec: findMatches(f, specOnly, x => `${x.key} ${x.title} ${plainText(x.body)}`, thr),
+      procedure: findMatches(f, procs, x => `${x.key} ${x.title} ${plainText(x.body)}`, thr),
       session: findMatches(f, sessTexts, x => x._text, Math.max(thr, 0.6)),
     };
     const status = {};
@@ -66,7 +66,7 @@ export function buildCoverage({ features, tests, specs, transcripts = [], errors
       status[c] = ov[c] === 'na' ? 'na' : ov[c] === 'ok' ? 'ok' : m[c].length ? (m[c][0].how === 'code' || m[c][0].score >= 0.75 ? 'ok' : 'weak') : 'gap';
     }
     if (status.regspec === 'ok' && m.regspec[0] && !/approved|freigegeben|done|aprobat/i.test(m.regspec[0].item.data?.status || '') && !ov.regspec) status.regspec = 'weak';
-    const errs = openErrors.filter(e => idsOf.some(id => hasKey(`${e.title} ${e.body || ''}`, id)));
+    const errs = openErrors.filter(e => idsOf.some(id => hasKey(`${e.title} ${plainText(e.body)} ${plainText(e.data?.notes)}`, id)));
     const gaps = cols.filter(c => status[c] === 'gap').length;
     return { feature: f, m, status, gaps, errors: errs };
   });

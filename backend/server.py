@@ -6,6 +6,7 @@ import json
 import logging
 import mimetypes
 import platform
+import re
 import sys
 import threading
 import time
@@ -299,7 +300,15 @@ def make_handler(ctx: AppContext):
 
         def _token(self) -> str | None:
             h = self.headers.get("Authorization") or ""
-            return h[7:] if h.startswith("Bearer ") else None
+            if h.startswith("Bearer "):
+                return h[7:]
+            # <img> tags cannot send the header: images in text fields use a cookie limited to /api/att/
+            if self.command in ("GET", "HEAD") and getattr(self, "_path", "").startswith("/api/att/"):
+                for part in (self.headers.get("Cookie") or "").split(";"):
+                    name, _, value = part.strip().partition("=")
+                    if name == "rt_token" and value:
+                        return value
+            return None
 
         def _is_local(self) -> bool:
             return self.client_address[0] in ("127.0.0.1", "::1")
@@ -344,6 +353,7 @@ def make_handler(ctx: AppContext):
         def _dispatch(self, method: str):
             url = urlparse(self.path)
             path = unquote(url.path)
+            self._path = path
             query = {k: v[-1] for k, v in parse_qs(url.query).items()}
             try:
                 if path.startswith("/api/"):
@@ -433,7 +443,7 @@ def make_handler(ctx: AppContext):
                 out["shared_mode"] = ctx.shared_status()["mode"]
                 self._json(out); return
 
-            user = self._user(touch=not (head == "shared" and method == "GET"))
+            user = self._user(touch=not ((head == "shared" and method == "GET") or (head == "att" and method in ("GET", "HEAD"))))
             assert user is not None
 
             if head == "shared":
@@ -465,6 +475,26 @@ def make_handler(ctx: AppContext):
                         upd["must_change"] = False
                     user = ctx.auth.update_user(user["username"], upd, user["username"])
                 self._json({"user": user, "pages": [p for p in PAGES if ctx.auth.can(user, p)]}); return
+
+            if head == "att":
+                if method in ("GET", "HEAD") and arg and arg != "stats":
+                    if not re.fullmatch(r"[0-9a-f]{64}", arg):
+                        raise ApiError(404, "not found")
+                    mime, raw = ctx.db.get_attachment(arg)
+                    self._send(200, raw, mime, {"Cache-Control": "private, max-age=31536000, immutable"}); return
+                if method == "GET" and arg == "stats":
+                    self._admin(user)
+                    self._json(ctx.db.attachment_stats()); return
+                if method == "POST" and arg == "cleanup":
+                    self._admin(user)
+                    res = ctx.db.cleanup_attachments(user["username"])
+                    LOG.info("%s removed %s unused images (%s bytes)", user["username"], res["removed"], res["bytes"])
+                    self._json(res); return
+                if method == "POST" and not arg:
+                    if user["role"] == "viewer":
+                        raise ApiError(403, "forbidden")
+                    aid = ctx.db.put_data_url(str(self._body().get("data_url") or ""), user["username"])
+                    self._json({"id": aid, "url": f"/api/att/{aid}"}, 201); return
 
             if head == "records":
                 if method == "GET":

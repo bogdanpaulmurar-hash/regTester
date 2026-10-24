@@ -287,6 +287,19 @@ mark { background: #FFE58A; color: #1C1600; border-radius: 2px; padding: 0 1px; 
 .rt-area img { max-width: 100%; height: auto; cursor: pointer; display: inline-block; margin: 4px 0; border: 1px solid var(--line-soft); }
 .rt-area p { margin: 0 0 6px; }
 .rt-area table { border-collapse: collapse; } .rt-area td { border: 1px solid var(--line); padding: 4px 6px; vertical-align: top; }
+.rt-area.compact { min-height: 70px; max-height: 420px; overflow-y: auto; }
+.rt-view { line-height: 1.5; overflow-wrap: anywhere; }
+.rt-view p { margin: 0 0 6px; }
+.rt-view img { max-width: 100%; height: auto; cursor: zoom-in; border: 1px solid var(--line-soft); border-radius: 4px; margin: 4px 0; }
+.hist-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.hist-thumbs img { max-width: 120px; max-height: 80px; border: 1px solid var(--line); border-radius: 4px; object-fit: cover; }
+.pre-wrap { white-space: pre-wrap; }
+.ed-nav { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.kpi.click { text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.kpi.click:hover, .kpi.click:focus-visible { border-color: var(--accent); }
+.kpi.click.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.drill-band { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--surface); }
+.ro-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 14px; }
 .rt-sizer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .rt-sizer input[type=range] { flex: 1; min-width: 140px; }
 /* word specification */

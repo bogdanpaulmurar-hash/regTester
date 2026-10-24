@@ -29,6 +29,10 @@ Exporturile se citesc așa cum ies din tool: rândul de titlu de deasupra antetu
 
 Fiecare secțiune are tab-ul **Istoric**: fișierele importate și fiecare modificare (cine, când, ce câmp), cu comparare înainte/după și **restaurare**.
 
+**Chenarele cu cifre** (de ex. „Deschise 4”, „Noi 2”, „Necategorisite”) sunt clicabile: duc la elementele respective, cu filtrul aplicat și o bandă „Filtru aplicat” care îl scoate. Click pe un rând deschide panoul lateral, unde elementul se poate edita, cu istoricul lui și săgețile ‹ › pentru a trece prin lista filtrată.
+
+**Screenshoturi în texte**: câmpurile de text lung (specificații, documentație, notițe pe erori, test cases, funcționalități, timeline, erori cunoscute) acceptă text formatat și imagini (Ctrl+V, drag & drop sau butonul de imagine). Pe elementele importate (erori, test cases, funcționalități, timeline), notițele și capturile stau în câmpul **Notițe și capturi**, care se păstrează la reimport. Imaginile se salvează o singură dată în baza de date, apar în Istoric și intră în exportul JSON.
+
 ### Specificație Word
 
 **Documentație › Specificație Word** construiește documentul în formatul specificațiilor de regression test:
@@ -56,7 +60,7 @@ Fiecare secțiune are tab-ul **Istoric**: fișierele importate și fiecare modif
 ## Setări și administrare
 
 - **Setări**: limba implicită (EN/DE/RO), temă, nume aplicație, **logo propriu** (apare în meniu, tab și tray), **pornire cu Windows**, pornire direct în tray, backup la pornire, **acces din rețea pentru telefon**, tiparul codurilor de funcție, pragul de potrivire, cuvintele de umplutură, promptul AI, culorile timeline-ului, nivelul și păstrarea log-ului, contul meu.
-- **Administrare** (doar admin): **Echipă** (folder comun în rețea, activitate și deblocare, invitație gata de copiat), **Pagini** (ascunde paginile nefolosite și redenumește-le în meniu; datele rămân), utilizatori, roluri (doar citire / editor / administrator), pagini permise per utilizator, autentificare obligatorie, **backup-uri** (folder ales pe fiecare calculator, copii ale bazei, export complet JSON cu toate datele și setările, restaurare cu previzualizare și alegerea părților), audit, oprirea aplicației.
+- **Administrare** (doar admin): **Echipă** (folder comun în rețea, activitate și deblocare, invitație gata de copiat), **Pagini** (ascunde paginile nefolosite și redenumește-le în meniu; datele rămân), utilizatori, roluri (doar citire / editor / administrator), pagini permise per utilizator, autentificare obligatorie, **backup-uri** (folder ales pe fiecare calculator, copii ale bazei, export complet JSON cu toate datele și setările, restaurare cu previzualizare și alegerea părților; imaginile din texte, cu ștergerea celor nefolosite), audit, oprirea aplicației.
 - **Log**: tot ce face aplicația (autentificări, importuri, modificări, erori), fișiere zilnice în folderul de date, cu filtru pe nivel și căutare.
 
 Datele stau în `%LOCALAPPDATA%\regTester` (`regtester.db`, `logs\`, `backups\`). Alt folder: `python regtester.py --data D:\regTester`. Cu folder comun, datele echipei stau acolo (vezi „Lucru în echipă”).

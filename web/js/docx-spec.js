@@ -106,7 +106,7 @@ export function cleanHtml(html) {
       const color = cssColor(n.style?.color || n.getAttribute('color'));
       if (tag === 'IMG') {
         const src = n.getAttribute('src') || '';
-        if (!/^data:image\/(png|jpe?g|gif|webp|bmp);base64,/i.test(src)) continue;
+        if (!/^data:image\/(png|jpe?g|gif|webp|bmp);base64,/i.test(src) && !/^\/api\/att\/[0-9a-f]{64}$/.test(src)) continue;
         const img = document.createElement('img');
         img.setAttribute('src', src);
         const w = parseInt(n.getAttribute('width') || n.style?.width, 10);
@@ -179,6 +179,14 @@ function para(inner, p = {}) {
   return `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ''}${inner}</w:p>`;
 }
 
+/** A stored image (/api/att/<id>, sent with the session cookie) as a data URL. */
+export async function fetchDataUrl(src) {
+  const res = await fetch(src, { credentials: 'same-origin' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => { const fr = new FileReader(); fr.onload = () => resolve(fr.result); fr.onerror = () => reject(fr.error); fr.readAsDataURL(blob); });
+}
+
 function dataUrlBytes(src) {
   const m = /^data:image\/([a-z+]+);base64,(.*)$/i.exec(src || '');
   if (!m) return null;
@@ -199,6 +207,7 @@ async function imageSize(src) {
 
 // Word accepts png, jpeg, gif, bmp directly; anything else is converted to png first
 async function toWordImage(src) {
+  if (/^\/api\/att\//.test(src)) { try { src = await fetchDataUrl(src); } catch { return null; } }
   let d = dataUrlBytes(src);
   if (!d) return null;
   if (!['png', 'jpg', 'gif', 'bmp'].includes(d.ext)) {

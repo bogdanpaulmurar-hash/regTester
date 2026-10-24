@@ -9,19 +9,22 @@ import {
 } from '../timeline-gen.js';
 import {
   addDays, btn, chip, clear, confirmBox, daysBetween, directed, download, emptyState, fmtDate, h, iso, isoWeek, listOrder, modal, normalize,
-  orderToggle, parseIso, seg, store, tabs, toast, toCsv, toIsoDate,
+  dropDrill, kpiBox, orderToggle, parseIso, plainText, seg, store, tabs, toast, toCsv, toIsoDate,
 } from '../util.js';
 
 const PRIORITY = ['deployment', 'regtest', 'performance', 'integration', 'review', 'protocol', 'documentation', 'qa', 'freeze', 'planning', 'holiday', 'other', 'sprint'];
 const LANES = { kind: r => r.kind || 'other', env: r => r.data.env || (r.kind === 'holiday' ? '~holiday' : '~none'), release: r => r.data.product ? '~' + r.data.product : r.data.release || '~none' };
 
-export async function render(root, ctx) {
+export async function render(root, ctx, params) {
   const st = Object.assign({ view: 'gantt', zoom: 'month', lanes: 'kind', q: '', release: '', env: '', product: '', hidden: false,
     kinds: [...TIMELINE_KINDS], from: '', to: '', year: new Date().getFullYear() }, store('tl') || {});
   st.kinds = st.kinds.filter(k => TIMELINE_KINDS.includes(k));
   for (const k of TIMELINE_KINDS) if (!(store('tl.k') || []).includes(k) && !st.kinds.includes(k)) st.kinds.push(k);
   store('tl.k', TIMELINE_KINDS);
   const save = () => store('tl', st);
+  // opened from a KPI: #timeline?view=quality[&issue=<type>]
+  let jumpTo = null;
+  if (params?.get('view') === 'quality') { st.view = 'quality'; jumpTo = params.get('issue'); save(); dropDrill(); }
   const colors = ctx.settings.timeline_colors || {};
   const colorOf = k => colors[k] || colors.other || '#6B7280';
   const canWrite = ctx.canWriteSection('timeline');
@@ -59,7 +62,7 @@ export async function render(root, ctx) {
       && (!st.release || r.data.release === st.release)
       && (!st.env || r.data.env === st.env)
       && (!st.product || (st.product === '~main' ? !r.data.product : r.data.product === st.product))
-      && (!q || normalize(`${r.title} ${r.data.release} ${r.data.sprint} ${r.data.owner || ''} ${r.data.substitute || ''} ${r.data.ot || ''} ${r.body}`).includes(q))
+      && (!q || normalize(`${r.title} ${r.data.release} ${r.data.sprint} ${r.data.owner || ''} ${r.data.substitute || ''} ${r.data.ot || ''} ${r.body || ''} ${plainText(r.data.notes)}`).includes(q))
       && (!from || r.e >= from) && (!to || r.s <= to));
   }
 
@@ -70,7 +73,7 @@ export async function render(root, ctx) {
     st.view, v => { st.view = v; save(); paint(); }));
     clear(filterBox); clear(content);
     if (st.view === 'history') { historyTab(content, ctx, ['timeline'], () => load(true)); return; }
-    if (st.view === 'quality') { quality(); return; }
+    if (st.view === 'quality') { quality(); if (jumpTo) { const tp = jumpTo; jumpTo = null; setTimeout(() => document.getElementById('tlq-' + tp)?.scrollIntoView({ block: 'start' }), 50); } return; }
     paintFilters();
     const items = filtered();
     if (!all.length) {
@@ -277,18 +280,20 @@ export async function render(root, ctx) {
     content.appendChild(h('p', { class: 'hint' }, t('tlq_intro')));
     if (!records.length) { content.appendChild(emptyState(t('tl_empty'))); return; }
     if (!issues.length) { content.appendChild(emptyState(t('tlq_none'))); return; }
+    const jump = tp => document.getElementById('tlq-' + tp)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     content.appendChild(h('div', { class: 'kpis' }, ISSUE_TYPES.map(tp => {
       const n = issues.filter(i => i.type === tp).length;
-      return h('div', { class: 'kpi ' + (n ? (tp === 'no_dates' ? 'warn' : 'bad') : 'ok') }, h('div', { class: 'l' }, t('tlq_' + tp)), h('div', { class: 'v' }, n));
+      return kpiBox(t('tlq_' + tp), n, n ? (tp === 'no_dates' ? 'warn' : 'bad') : 'ok', n ? () => jump(tp) : null, { id: 'tlq-' + tp });
     })));
     for (const tp of ISSUE_TYPES) {
       const list = issues.filter(i => i.type === tp);
       if (!list.length) continue;
-      content.appendChild(h('section', { class: 'card', style: { marginTop: '12px' } },
+      const recs = list.map(i => records.find(x => x.id === i.rec.id) || i.rec);
+      content.appendChild(h('section', { class: 'card', id: 'tlq-' + tp, style: { marginTop: '12px', scrollMarginTop: '12px' } },
         h('h2', null, `${t('tlq_' + tp)} · ${list.length}`), h('p', { class: 'hint' }, t('tlq_' + tp + '_hint')),
         h('div', { class: 'table-wrap' }, h('table', { class: 't' },
           h('thead', null, h('tr', null, [t('f_title'), t('f_release'), t('f_start'), t('f_end'), t('tlq_detail')].map(x => h('th', null, x)))),
-          h('tbody', null, list.map(i => h('tr', { class: canWrite ? 'click' : '', tabindex: '0', onclick: () => canWrite && edit(i.rec) },
+          h('tbody', null, list.map((i, n) => h('tr', { class: 'click', tabindex: '0', onclick: () => edit(recs[n], recs), onkeydown: e => { if (e.key === 'Enter') edit(recs[n], recs); } },
             h('td', null, i.rec.title), h('td', null, i.rec.data?.release || ''), h('td', { class: 'nowrap' }, fmtDate(i.rec.data?.start)),
             h('td', { class: 'nowrap' }, fmtDate(i.rec.data?.end)),
             h('td', null, tp === 'copied_dates' ? t('tlq_copied_from', { r: i.info }) : i.info))))))));
@@ -296,7 +301,7 @@ export async function render(root, ctx) {
   }
 
   // ------------------------------------------------------------ editing
-  function edit(r) {
+  function edit(r, navList) {
     const releases = [...new Set(all.map(x => x.data.release).filter(Boolean))].sort(cmpVersion);
     const rec = r ? records.find(x => x.id === r.id) : null;
     openEditor({
@@ -314,8 +319,10 @@ export async function render(root, ctx) {
         { key: 'data.keyword', label: t('f_keyword'), hint: t('f_keyword_hint') },
         rec?.kind === 'holiday' ? { key: 'data.substitute', label: t('f_substitute') } : { key: 'data.owner', label: t('f_owner') },
         { key: 'data.location', label: t('f_location'), hint: t('tl_location_hint') },
-        { key: 'body', label: t('f_notes'), type: 'textarea', rows: 4 },
+        { key: 'body', label: t('f_notes'), type: 'textarea', rows: 3, hint: t('f_notes_import_hint') },
+        { key: 'data.notes', label: t('f_notes_rich'), type: 'rich', hint: t('f_notes_rich_hint') },
       ],
+      nav: navList ? { list: navList, open: x => edit(x, navList) } : null,
       onSaved: () => { ctx.invalidate('timeline'); load(true); },
     });
   }
@@ -407,7 +414,7 @@ export async function render(root, ctx) {
     for (const r of items) {
       lines.push('BEGIN:VEVENT', `UID:${r.id}@regtester`, `DTSTAMP:${d(iso(new Date()))}T000000Z`, `DTSTART;VALUE=DATE:${d(r.data.start)}`,
         `DTEND;VALUE=DATE:${d(iso(addDays(r.e, 1)))}`, `SUMMARY:${escIcs(r.title)}`, `CATEGORIES:${r.kind}`,
-        `DESCRIPTION:${escIcs([r.data.release, r.data.sprint, r.data.env, r.body].filter(Boolean).join('\n'))}`, 'END:VEVENT');
+        `DESCRIPTION:${escIcs([r.data.release, r.data.sprint, r.data.env, r.body, plainText(r.data.notes)].filter(Boolean).join('\n'))}`, 'END:VEVENT');
     }
     lines.push('END:VCALENDAR');
     download(`timeline-${iso(new Date())}.ics`, lines.join('\r\n'), 'text/calendar');

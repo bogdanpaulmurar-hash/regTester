@@ -353,6 +353,23 @@ export async function render(root, ctx) {
       }
     }
     paintList();
+
+    // screenshots in text fields: stored once in the database; the ones nothing refers to any more can be removed
+    const mb = n => (n / 1024 / 1024).toFixed(1) + ' MB';
+    const attBox = h('div', { class: 'stack' });
+    body.appendChild(h('div', { class: 'card stack', id: 'att-card' }, h('h2', null, t('att_title')), h('p', { class: 'hint', style: { margin: 0 } }, t('att_hint')), attBox));
+    async function paintAtt() {
+      clear(attBox);
+      let a;
+      try { a = await ctx.api.attStats(); } catch (e) { attBox.appendChild(chip(errText(e), 'bad')); return; }
+      attBox.appendChild(h('div', { class: 'toolbar', style: { margin: 0 } },
+        h('span', { id: 'att-stats' }, t('att_stats', { n: a.count, size: mb(a.bytes), u: a.unused, usize: mb(a.unused_bytes) })), h('span', { class: 'sp' }),
+        btn(t('att_cleanup'), async () => {
+          if (!(await confirmBox(t('att_cleanup_q', { n: a.unused }), t('att_cleanup')))) return;
+          try { const r = await ctx.api.attCleanup(); toast(t('att_cleaned', { n: r.removed, size: mb(r.bytes) })); paintAtt(); } catch (e) { toast(errText(e), 'bad'); }
+        }, { cls: 'sm', disabled: !a.unused, id: 'att-cleanup' })));
+    }
+    if (ctx.api.attStats) paintAtt(); else attBox.appendChild(h('p', { class: 'hint' }, t('att_demo')));
   }
 
   /** View preferences kept in this browser (filters, sort order, saved searches), without the sign-in token. */
@@ -390,6 +407,7 @@ export async function render(root, ctx) {
         h('label', { class: 'check' }, setBox, t('bk_settings_part', { n: prev.settings.length }),
           prev.settings.length ? h('span', { class: 'small muted' }, ' · ' + prev.settings.join(', ')) : null),
         hasPrefs ? h('label', { class: 'check' }, prefBox, t('bk_prefs_part')) : null,
+        prev.images ? h('p', { class: 'small muted', style: { margin: 0 } }, t('bk_images_part', { n: prev.images })) : null,
         h('p', { class: 'hint' }, t('bk_restore_hint')),
       ],
       footer: c => [btn(t('cancel'), c), btn(t('bk_restore_do'), async () => {

@@ -61,7 +61,7 @@ def main(argv=None) -> int:
         log.exception("Backup on start failed")
 
     try:
-        server = AppServer(ctx)
+        server = open_server(ctx, settings["port"], log)
     except OSError as exc:
         log.error("Cannot open port %s: %s (already running?)", settings["port"], exc)
         webbrowser.open(f"http://127.0.0.1:{settings['port']}/")
@@ -92,6 +92,50 @@ def main(argv=None) -> int:
     finally:
         server.stop()
     return 0
+
+
+def open_server(ctx, port: int, log) -> AppServer:
+    """Open the port; if an older or newer regTester holds it, ask it to leave and take over."""
+    import json
+    import time
+    import urllib.request
+
+    from backend import __version__
+    try:
+        return AppServer(ctx)
+    except OSError as first:
+        base = f"http://127.0.0.1:{port}/api/"
+        try:
+            health = json.loads(urllib.request.urlopen(base + "health", timeout=3).read())
+        except (OSError, ValueError):
+            raise first from None
+        if health.get("app") != "regTester" or health.get("version") == __version__:
+            raise first
+        log.warning("regTester %s is still running on port %s; replacing it with %s", health.get("version"), port, __version__)
+        try:
+            req = urllib.request.Request(base + "handover", method="POST", data=json.dumps({"version": __version__}).encode(),
+                                         headers={"Content-Type": "application/json"})
+            answer = json.loads(urllib.request.urlopen(req, timeout=3).read())
+        except (OSError, ValueError):
+            answer = {}
+        if not answer.get("ok"):
+            msg = (f"regTester {health.get('version')} is still running on port {port}.\n"
+                   f"Close it from the tray icon (Quit), then start regTester {__version__} again.")
+            log.error(msg.replace("\n", " "))
+            if os.name == "nt":
+                try:
+                    import ctypes
+                    ctypes.windll.user32.MessageBoxW(None, msg, "regTester", 0x40)
+                except Exception:  # noqa: BLE001
+                    pass
+            raise first
+        for _ in range(40):
+            time.sleep(0.25)
+            try:
+                return AppServer(ctx)
+            except OSError:
+                pass
+        raise first
 
 
 CLI_TEXT = {

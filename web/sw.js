@@ -1,5 +1,5 @@
 // Offline shell for the installed app. API calls always go to the server (never cached).
-const CACHE = 'regtester-shell-v9';
+const CACHE = 'regtester-shell-v10';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/logo.svg',
   'js/app.js', 'js/api.js', 'js/demo.js', 'js/util.js', 'js/i18n.js', 'js/parsers.js', 'js/importer.js', 'js/editor.js', 'js/history-view.js',

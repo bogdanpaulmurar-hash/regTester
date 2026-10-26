@@ -10,7 +10,7 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - Folder comun: `python regtester.py --shared "\\server\regTester"` (`""` = înapoi la date locale) sau Administrare › Echipă
 - Date exemplu: `python tools/make_samples.py` → `sample-data/`
 - Demo fără server: `web/index.html` deschis direct
-- Versiune (acum 0.7.0): `UI_VERSION` în `web/js/version.js` = `__version__` în `backend/__init__.py`. Un modul JS nou se adaugă și în lista `SHELL` din `web/sw.js` (cu `CACHE` incrementat)
+- Versiune (acum 0.7.1): `UI_VERSION` în `web/js/version.js` = `__version__` în `backend/__init__.py`. Un modul JS nou se adaugă și în lista `SHELL` din `web/sw.js` (cu `CACHE` incrementat)
 
 ## Hartă
 - `backend/`: `server.py` (HTTP/API, `AppContext` alege unde stau datele), `db.py` (schemă, istoric, importuri), `shared.py` (folder comun: fișier de blocare, copie locală, mod citire), `auth.py` (utilizatori, roluri, sesiuni), `system.py` (log, autostart, backup), `tray.py`

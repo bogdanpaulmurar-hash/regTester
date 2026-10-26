@@ -5,8 +5,10 @@ import base64
 import json
 import logging
 import mimetypes
+import os
 import platform
 import re
+import socket
 import sys
 import threading
 import time
@@ -410,6 +412,18 @@ def make_handler(ctx: AppContext):
             if head == "health":
                 self._json({"ok": True, "app": "regTester", "version": __version__}); return
 
+            if head == "handover" and method == "POST":
+                # a newer/other copy started on this computer wants the port: leave only for a different version
+                if not self._is_local():
+                    self._json({"error": "forbidden"}, 403); return
+                other = str(self._body().get("version", ""))
+                if not other or other == __version__ or not ctx.on_quit:
+                    self._json({"ok": False, "version": __version__}); return
+                LOG.info("Handing the port over to regTester %s started on this computer", other)
+                self._json({"ok": True, "version": __version__})
+                threading.Timer(0.3, ctx.on_quit).start()
+                return
+
             if head == "login" and method == "POST":
                 body = self._body()
                 res = ctx.auth.login(body.get("username", ""), body.get("password", ""))
@@ -760,13 +774,23 @@ def make_handler(ctx: AppContext):
     return Handler
 
 
+class _Server(ThreadingHTTPServer):
+    # Windows: SO_REUSEADDR lets a second copy bind the same port silently while the first keeps answering
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self):
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 class AppServer:
     def __init__(self, ctx: AppContext):
         self.ctx = ctx
         settings = ctx.db.get_settings()
         host = "0.0.0.0" if settings["lan_access"] else "127.0.0.1"
         ctx.bound_host, ctx.bound_port = host, int(settings["port"])
-        self.httpd = ThreadingHTTPServer((host, ctx.bound_port), make_handler(ctx))
+        self.httpd = _Server((host, ctx.bound_port), make_handler(ctx))
         self.httpd.daemon_threads = True
         self.thread: threading.Thread | None = None
 

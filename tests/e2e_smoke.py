@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -42,6 +43,7 @@ def main():
     proc = subprocess.Popen([sys.executable, str(ROOT / "regtester.py"), "--no-tray", "--data", str(data), "--port", str(PORT)],
                             stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     errors = []
+    subst_drive = ""
     try:
         for _ in range(50):
             try:
@@ -57,7 +59,12 @@ def main():
             page.fill("#login-user", "admin"); page.fill("#login-pass", "admin"); page.click("button[type=submit]")
             page.wait_for_selector("#pw-new")
             page.fill("#pw-old", "admin"); page.fill("#pw-new", "secret1"); page.fill("#pw-rep", "secret1")
-            page.click(".dialog footer .btn.primary")
+            for _ in range(5):  # the dialog may not be wired yet on a slow first load
+                page.click(".dialog footer .btn.primary")
+                try:
+                    page.wait_for_selector("#pw-new", state="detached", timeout=3000); break
+                except Exception:  # noqa: BLE001
+                    pass
             page.wait_for_timeout(400)
             token = page.evaluate("JSON.parse(localStorage.getItem('rt.token'))")
 
@@ -374,6 +381,15 @@ def main():
             # shared folder: copy the data there, sign in again, survive an outage read-only
             share = data / "share"
             share.mkdir()
+            share_real = share
+            if os.name == "nt":
+                # Windows cannot rename a folder while the server holds the database open:
+                # reach it through a subst drive and drop the drive to simulate the outage
+                used = {p[0] for p in os.listdrives()} if hasattr(os, "listdrives") else set()
+                letter = next(c for c in "RSTUVWXYZ" if c not in used and not Path(f"{c}:/").exists())
+                subprocess.run(["subst", f"{letter}:", str(share_real)], check=True)
+                subst_drive = f"{letter}:"
+                share = Path(f"{letter}:/")
             n_specs = len(api("records?section=specs", token))
             page.evaluate("location.hash = 'admin'"); page.wait_for_selector(".page-head")
             page.get_by_role("tab", name="Team").click(); page.wait_for_selector("#team-path")
@@ -388,7 +404,10 @@ def main():
             assert st["mode"] == "shared" and (share / "regtester.db").is_file(), st
             assert len(api("records?section=specs", token)) == n_specs
             away = data / "share-away"
-            share.rename(away)
+            if subst_drive:
+                subprocess.run(["subst", subst_drive, "/d"], check=True)
+            else:
+                share.rename(away)
             for _ in range(60):
                 if api("shared", token)["mode"] == "offline":
                     break
@@ -400,7 +419,10 @@ def main():
                 raise AssertionError("write accepted while read-only")
             except urllib.error.HTTPError as exc:
                 assert exc.code == 503, exc.code
-            away.rename(share)
+            if subst_drive:
+                subprocess.run(["subst", subst_drive, str(share_real)], check=True)
+            else:
+                away.rename(share)
             for _ in range(60):
                 if api("shared", token)["mode"] == "shared":
                     break
@@ -430,6 +452,8 @@ def main():
         if errors:
             print("JS errors:\n" + "\n".join(errors))
         proc.terminate(); proc.wait(5)
+        if subst_drive:
+            subprocess.run(["subst", subst_drive, "/d"], capture_output=True)
         shutil.rmtree(data, ignore_errors=True)
     if errors:
         print("\n".join(errors)); sys.exit(1)

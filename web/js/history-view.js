@@ -42,6 +42,7 @@ export async function renderHistory(container, ctx, opts = {}) {
   clear(container);
   const text = h('input', { type: 'search', placeholder: t('hist_filter'), 'aria-label': t('hist_filter') });
   const list = h('div', { class: 'list' });
+  let paint = () => {}; // the order switch can be clicked while the entries are still loading
   container.appendChild(h('div', { class: 'stack' },
     opts.compact ? null : h('div', { class: 'toolbar' }, h('div', { class: 'grow' }, text), orderToggle('history', () => paint())), list));
   let entries = [];
@@ -53,7 +54,7 @@ export async function renderHistory(container, ctx, opts = {}) {
     } else entries = await ctx.api.history({ limit: opts.limit || 500 });
   } catch (e) { list.appendChild(h('div', { class: 'chip bad' }, e.message)); return; }
 
-  const paint = () => {
+  paint = () => {
     clear(list);
     const q = text.value.trim().toLowerCase();
     // The server sends the latest entries; "oldest first" reverses that window.

@@ -44,7 +44,7 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - Documentație vizibilă: fără numele angajatorului, e-mailuri de firmă, ID-uri sau numere interne.
 
 ## Stare și jurnale
-- Erori și modificări deschise: `KNOWN_ISSUES.md`. Istoric: `CHANGELOG.md` (dacă există). Pașii de test pentru versiunile neconfirmate: `TESTING.md`. Ce e implementat și confirmat se mută din KNOWN_ISSUES în CHANGELOG.
+- Erori și modificări deschise: documentul **MODIFICARI_PROIECTE (live)**, secțiunea regTester (+ Inbox). Context: **PROIECTE_CONTEXT (live)**, secțiunea regTester. Istoric: `CHANGELOG.md`. Pașii de test pentru versiunile neconfirmate: `TESTING.md`. Ce e implementat și confirmat se șterge din MODIFICARI.
 
 ## Când se actualizează fișierul
 În același commit, când se schimbă comenzile de pornire/test, structura folderelor, formatul unui export suportat sau când un defect scoate la iveală o regulă de ținut minte. Nu pentru funcții obișnuite. Sub ~60 de rânduri.

@@ -43,8 +43,8 @@ Unealtă locală pentru perioada de regression test dinaintea fiecărui release:
 - Cod și commit-uri în engleză; README și răspunsurile către utilizator în română.
 - Documentație vizibilă: fără numele angajatorului, e-mailuri de firmă, ID-uri sau numere interne.
 
-## Context comun
-Prezentarea proiectelor și lista de erori/modificări sunt în două Google Docs: **PROIECTE_CONTEXT (live)** și **MODIFICARI_PROIECTE (live)** — citește doar secțiunea regTester. Ce s-a implementat și confirmat se șterge din MODIFICARI.
+## Stare și jurnale
+- Erori și modificări deschise: `KNOWN_ISSUES.md`. Istoric: `CHANGELOG.md` (dacă există). Pașii de test pentru versiunile neconfirmate: `TESTING.md`. Ce e implementat și confirmat se mută din KNOWN_ISSUES în CHANGELOG.
 
 ## Când se actualizează fișierul
 În același commit, când se schimbă comenzile de pornire/test, structura folderelor, formatul unui export suportat sau când un defect scoate la iveală o regulă de ținut minte. Nu pentru funcții obișnuite. Sub ~60 de rânduri.
